@@ -95,7 +95,7 @@
         <div class="flex justify-between items-center mb-2.5 flex-wrap gap-2">
           <h2 class="text-base font-semibold m-0">Narration transcript</h2>
           <div class="flex gap-2 items-center" id="transcriptActions">
-            <button type="button" id="editTranscriptBtn" class="bg-transparent text-accent border border-accent px-3 py-1.5 text-xs rounded-md cursor-pointer hover:bg-accent hover:text-white">Edit transcript</button>
+            <button type="button" id="editTranscriptBtn" class="bg-transparent text-ink border border-line px-3 py-1.5 text-xs rounded-md cursor-pointer hover:bg-stone-100 font-semibold">Edit transcript</button>
           </div>
         </div>
         <div class="transcript-panel border border-line rounded-lg bg-white max-h-[70vh] overflow-y-auto p-1.5" id="transcriptPanel"></div>
@@ -642,7 +642,7 @@
         const editBtn = document.createElement('button');
         editBtn.type = 'button';
         editBtn.id = 'editTranscriptBtn';
-        editBtn.className = 'bg-transparent text-accent border border-accent px-3 py-1.5 text-xs rounded-md cursor-pointer hover:bg-accent hover:text-white';
+        editBtn.className = 'bg-transparent text-ink border border-line px-3 py-1.5 text-xs rounded-md cursor-pointer hover:bg-stone-100 font-semibold';
         editBtn.textContent = 'Edit transcript';
         editBtn.addEventListener('click', enterEditMode);
         transcriptActions.appendChild(editBtn);
@@ -658,7 +658,7 @@
         if (hasChanges) {
           const regenBtn = document.createElement('button');
           regenBtn.type = 'button';
-          regenBtn.className = 'bg-emerald-500 text-white border-none px-3 py-1.5 text-xs rounded-md cursor-pointer font-semibold hover:opacity-90';
+          regenBtn.className = 'bg-accent text-white border-none px-3 py-1.5 text-xs rounded-md cursor-pointer font-semibold hover:opacity-90';
           regenBtn.textContent = 'Regenerate';
           regenBtn.addEventListener('click', openRegenModal);
           transcriptActions.appendChild(regenBtn);
