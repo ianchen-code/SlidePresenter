@@ -4,6 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Slide Presentation</title>
+  <link rel="stylesheet" href="/transitions.css">
+  <script src="/ui-transitions.js"></script>
+  <script src="/toast.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
@@ -34,6 +37,9 @@
   <div class="flex justify-between items-center mb-4">
     <a href="/" class="text-accent no-underline font-semibold hover:underline">&larr; All slides</a>
 
+    <div class="flex items-center gap-3">
+      <button type="button" id="shareBtn" class="hidden bg-transparent text-accent border border-accent px-3 py-1.5 text-xs rounded-md cursor-pointer hover:bg-accent hover:text-white font-semibold">Share</button>
+
     <!-- Auth UI -->
     <div id="authContainer" class="flex items-center gap-2">
       <a id="loginBtn" href="/login" class="hidden text-stone-600 font-semibold text-sm hover:text-accent">Sign in</a>
@@ -41,21 +47,31 @@
         <button id="userMenuBtn" class="flex items-center gap-2 text-sm">
           <img id="userAvatar" src="" alt="" class="w-8 h-8 rounded-full border border-line">
         </button>
-        <div id="userDropdown" class="hidden absolute right-0 mt-2 w-48 bg-white border border-line rounded-lg shadow-lg py-1 z-50">
-          <div class="px-4 py-2 border-b border-line">
-            <p id="userName" class="text-sm font-medium text-stone-700 truncate"></p>
+        <div id="userDropdown" class="hidden absolute right-0 mt-2 w-56 bg-white border border-line rounded-lg shadow-lg py-1 z-50 transition-all duration-150 origin-top-right opacity-0 scale-95">
+          <div class="px-4 py-3 border-b border-line">
+            <p id="userName" class="text-sm font-semibold text-ink truncate"></p>
             <p id="userEmail" class="text-xs text-stone-500 truncate"></p>
           </div>
+          <a href="/token" class="block px-4 py-2 text-sm text-stone-600 hover:bg-stone-50">Manage Tokens</a>
           <a href="/auth/logout" class="block px-4 py-2 text-sm text-stone-600 hover:bg-stone-50">Sign out</a>
         </div>
       </div>
+    </div>
     </div>
   </div>
 
   <div id="content">
     <div class="flex gap-8 items-start max-md:flex-col">
       <div class="flex-1 min-w-0">
-        <h1 class="text-2xl font-semibold mb-1">Slide Presentation</h1>
+        <div class="flex items-center gap-2 mb-1">
+          <h1 id="jobTitle" class="text-2xl font-semibold m-0">Slide Presentation</h1>
+          <button type="button" id="editDetailsBtn" class="hidden text-stone-400 hover:text-accent p-1 flex-shrink-0" title="Edit name & description">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            </svg>
+          </button>
+        </div>
+        <p id="jobDescription" class="hidden text-stone-500 text-sm mt-0 mb-2"></p>
         <p class="text-stone-500 mt-0 mb-8">Job ID: <span class="font-mono text-sm text-stone-500 break-all" id="jobIdDisplay"></span></p>
 
         <div id="status">
@@ -89,8 +105,8 @@
   </div>
 
   <!-- Regeneration Modal -->
-  <div class="hidden fixed inset-0 bg-black/40 z-50 items-center justify-center" id="regenModal">
-    <div class="bg-white rounded-xl w-full max-w-md mx-5 shadow-2xl">
+  <div class="hidden fixed inset-0 bg-black/40 z-50 items-center justify-center transition-opacity duration-200 opacity-0" id="regenModal">
+    <div class="bg-white rounded-xl w-full max-w-md mx-5 shadow-2xl transition-all duration-200 scale-95 opacity-0">
       <div class="px-6 py-5 border-b border-line flex justify-between items-center">
         <h2 class="text-lg font-semibold m-0">Regenerate Slides</h2>
         <button class="bg-transparent border-none text-2xl cursor-pointer text-stone-500 hover:text-ink leading-none" id="regenModalClose">&times;</button>
@@ -98,20 +114,80 @@
       <div class="p-6">
         <div class="text-sm text-stone-600 mb-4 p-2.5 bg-stone-100 rounded-md" id="changesSummary"></div>
 
-        <div class="mb-4 relative">
-          <a href="/token" class="absolute right-0 -top-5 text-xs text-accent hover:underline">Manage tokens</a>
-          <label for="tokenSelect" class="text-sm font-semibold text-stone-600 block mb-2">API Token</label>
-          <select id="tokenSelect" class="w-full px-3 py-2.5 border border-line rounded-lg text-sm bg-white">
-            <option value="">-- Select saved token --</option>
-          </select>
-          <input type="password" id="manualKeyInput" placeholder="sk-ant-..." class="w-full mt-2 px-3 py-2.5 border border-line rounded-lg text-sm bg-white hidden">
-        </div>
-
-        <p class="text-xs text-stone-500 mt-2">Your API token is needed to regenerate the audio.</p>
+        <p class="text-xs text-stone-500 mt-2">Uses your default API token (<a href="/token" class="text-accent hover:underline">manage tokens</a>) to regenerate the audio.</p>
       </div>
       <div class="px-6 py-4 border-t border-line flex justify-end gap-3">
         <button class="bg-transparent text-ink border border-line rounded-lg px-4 py-2.5 text-sm font-semibold cursor-pointer hover:bg-stone-100" id="regenCancelBtn">Cancel</button>
         <button class="bg-accent text-white border-none rounded-lg px-4 py-2.5 text-sm font-semibold cursor-pointer hover:opacity-90" id="regenConfirmBtn">Regenerate</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Edit Details Modal -->
+  <div class="hidden fixed inset-0 bg-black/40 z-50 items-center justify-center transition-opacity duration-200 opacity-0" id="detailsModal">
+    <div class="bg-white rounded-xl w-full max-w-md mx-5 shadow-2xl transition-all duration-200 scale-95 opacity-0">
+      <div class="px-6 py-5 border-b border-line flex justify-between items-center">
+        <h2 class="text-lg font-semibold m-0">Edit Details</h2>
+        <button class="bg-transparent border-none text-2xl cursor-pointer text-stone-500 hover:text-ink leading-none" id="detailsModalClose">&times;</button>
+      </div>
+      <div class="p-6 flex flex-col gap-4">
+        <div>
+          <label for="titleInput" class="text-sm font-semibold text-stone-600 block mb-2">Name</label>
+          <input type="text" id="titleInput" placeholder="Untitled presentation" class="w-full px-3 py-2.5 border border-line rounded-lg text-sm bg-white">
+        </div>
+        <div>
+          <div class="flex justify-between items-center mb-2">
+            <label for="descriptionInput" class="text-sm font-semibold text-stone-600">Description <span class="text-stone-400 font-normal">(optional)</span></label>
+            <div class="relative flex-shrink-0">
+              <button type="button" id="autoFillBtn" class="flex items-center gap-1 text-xs text-accent hover:underline font-semibold" title="AI writing tools">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M12 2l1.9 5.1L19 9l-5.1 1.9L12 16l-1.9-5.1L5 9l5.1-1.9L12 2z" />
+                  <path d="M19 14l.7 1.9L21.6 16.6 19.9 17.3 19 19l-.9-1.7-1.7-.7 1.7-.7L19 14z" />
+                  <path d="M5 14l.7 1.9L7.6 16.6 5.9 17.3 5 19l-.9-1.7L2.4 16.6l1.9-.7L5 14z" />
+                </svg>
+                <span id="autoFillBtnLabel">AI write</span>
+              </button>
+            </div>
+          </div>
+          <textarea id="descriptionInput" rows="3" class="w-full px-3 py-2.5 border border-line rounded-lg text-sm bg-white resize-y"></textarea>
+        </div>
+      </div>
+      <div class="px-6 py-4 border-t border-line flex justify-end gap-3">
+        <button class="bg-transparent text-ink border border-line rounded-lg px-4 py-2.5 text-sm font-semibold cursor-pointer hover:bg-stone-100" id="detailsCancelBtn" type="button">Cancel</button>
+        <button class="bg-accent text-white border-none rounded-lg px-4 py-2.5 text-sm font-semibold cursor-pointer hover:opacity-90" id="detailsSaveBtn" type="button">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Share Modal -->
+  <div class="hidden fixed inset-0 bg-black/40 z-50 items-center justify-center transition-opacity duration-200 opacity-0" id="shareModal">
+    <div class="bg-white rounded-xl w-full max-w-md mx-5 shadow-2xl transition-all duration-200 scale-95 opacity-0">
+      <div class="px-6 py-5 border-b border-line flex justify-between items-center">
+        <h2 class="text-lg font-semibold m-0">Share this presentation</h2>
+        <button class="bg-transparent border-none text-2xl cursor-pointer text-stone-500 hover:text-ink leading-none" id="shareModalClose">&times;</button>
+      </div>
+      <div class="p-6 flex flex-col gap-4">
+        <label class="flex items-center justify-between cursor-pointer">
+          <span class="text-sm font-semibold text-stone-600">Link sharing</span>
+          <input type="checkbox" id="shareEnabledToggle" class="w-4 h-4 accent-accent cursor-pointer">
+        </label>
+        <div id="sharePermissionRow" class="hidden">
+          <label class="text-sm font-semibold text-stone-600 block mb-2">Anyone with the link can</label>
+          <div class="flex gap-4 text-sm text-stone-600">
+            <label class="flex items-center gap-1.5 cursor-pointer"><input type="radio" name="sharePermission" value="view" class="accent-accent"> View</label>
+            <label class="flex items-center gap-1.5 cursor-pointer"><input type="radio" name="sharePermission" value="edit" class="accent-accent"> Edit</label>
+          </div>
+        </div>
+        <div id="shareLinkRow" class="hidden">
+          <label class="text-sm font-semibold text-stone-600 block mb-2">Link</label>
+          <div class="flex gap-2">
+            <input type="text" id="shareLinkInput" readonly class="flex-1 min-w-0 px-3 py-2.5 border border-line rounded-lg text-xs font-mono bg-stone-50">
+            <button type="button" id="shareCopyBtn" class="flex-shrink-0 bg-transparent text-ink border border-line rounded-lg px-3 py-2.5 text-sm font-semibold cursor-pointer hover:bg-stone-100">Copy</button>
+          </div>
+        </div>
+      </div>
+      <div class="px-6 py-4 border-t border-line flex justify-end gap-3">
+        <button class="bg-accent text-white border-none rounded-lg px-4 py-2.5 text-sm font-semibold cursor-pointer hover:opacity-90" id="shareDoneBtn" type="button">Done</button>
       </div>
     </div>
   </div>
@@ -134,26 +210,59 @@
     const jobIdDisplay = document.getElementById('jobIdDisplay');
     const contentDiv = document.getElementById('content');
     const notFoundDiv = document.getElementById('notFound');
+    const jobTitleEl = document.getElementById('jobTitle');
+    const jobDescriptionEl = document.getElementById('jobDescription');
+    const shareBtn = document.getElementById('shareBtn');
+    const editDetailsBtn = document.getElementById('editDetailsBtn');
 
     // Modal elements
     const regenModal = document.getElementById('regenModal');
     const regenModalClose = document.getElementById('regenModalClose');
-    const tokenSelect = document.getElementById('tokenSelect');
-    const manualKeyInput = document.getElementById('manualKeyInput');
     const regenCancelBtn = document.getElementById('regenCancelBtn');
     const regenConfirmBtn = document.getElementById('regenConfirmBtn');
     const changesSummary = document.getElementById('changesSummary');
+
+    // Edit Details modal elements
+    const detailsModal = document.getElementById('detailsModal');
+    const detailsModalClose = document.getElementById('detailsModalClose');
+    const titleInput = document.getElementById('titleInput');
+    const descriptionInput = document.getElementById('descriptionInput');
+    const detailsCancelBtn = document.getElementById('detailsCancelBtn');
+    const detailsSaveBtn = document.getElementById('detailsSaveBtn');
+    const autoFillBtn = document.getElementById('autoFillBtn');
+    const autoFillBtnLabel = document.getElementById('autoFillBtnLabel');
+
+    // Share modal elements
+    const shareModal = document.getElementById('shareModal');
+    const shareModalClose = document.getElementById('shareModalClose');
+    const shareEnabledToggle = document.getElementById('shareEnabledToggle');
+    const sharePermissionRow = document.getElementById('sharePermissionRow');
+    const sharePermissionInputs = document.querySelectorAll('input[name="sharePermission"]');
+    const shareLinkRow = document.getElementById('shareLinkRow');
+    const shareLinkInput = document.getElementById('shareLinkInput');
+    const shareCopyBtn = document.getElementById('shareCopyBtn');
+    const shareDoneBtn = document.getElementById('shareDoneBtn');
 
     let pollTimer = null;
     let transcriptItems = []; // {slide, text, originalText, start, duration, el}
     let isEditMode = false;
     let hasChanges = false;
-    let savedTokens = [];
     let isProcessing = false;
+    let currentJob = null;
+    let canEdit = false;
 
     // Extract job ID from URL path: /slide/{job_id}
     const pathParts = window.location.pathname.split('/');
     const jobId = pathParts[pathParts.length - 1] || pathParts[pathParts.length - 2];
+
+    // A share link looks like /slide/{job_id}?share={token}. Forward the
+    // token on every job-scoped API call so a view/edit share link works
+    // without the visitor being signed in.
+    const shareParam = new URLSearchParams(window.location.search).get('share');
+    function withShare(path) {
+      if (!shareParam) return path;
+      return path + (path.includes('?') ? '&' : '?') + 'share=' + encodeURIComponent(shareParam);
+    }
 
     if (!jobId || jobId === 'slide') {
       showNotFound();
@@ -168,79 +277,131 @@
       notFoundDiv.classList.remove('hidden');
     }
 
+    function applyJobMeta(job) {
+      currentJob = job;
+      canEdit = !!job.can_edit;
+      jobTitleEl.textContent = job.title || job.filename || 'Untitled presentation';
+      if (job.description) {
+        jobDescriptionEl.textContent = job.description;
+        jobDescriptionEl.classList.remove('hidden');
+      } else {
+        jobDescriptionEl.classList.add('hidden');
+      }
+      editDetailsBtn.classList.toggle('hidden', !canEdit);
+      shareBtn.classList.toggle('hidden', !job.is_owner);
+    }
+
     function startPolling() {
       pollJob();
       pollTimer = setInterval(pollJob, 1500);
     }
 
-    // Load saved tokens
-    async function loadTokens() {
-      try {
-        const res = await fetch('/api/tokens');
-        savedTokens = await res.json();
-        updateTokenSelect();
-      } catch (err) {
-        console.error('Failed to load tokens:', err);
+    // Load saved tokens (shared by the Regenerate and Edit Details modals)
+    // Every AI action on this page (regenerate, auto-fill, per-slide spark
+    // menu) uses whichever token is marked default in Manage Tokens -- no
+    // per-form token picker.
+    async function getApiKey() {
+      const res = await fetch('/api/tokens/default/decrypt');
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.detail || 'Failed to retrieve token');
       }
+      const data = await res.json();
+      return data.token;
     }
 
-    function updateTokenSelect() {
-      // Clear all options except the first placeholder
-      while (tokenSelect.options.length > 1) {
-        tokenSelect.remove(1);
+    // Reusable AI-actions dropdown, anchored to a spark-icon trigger button.
+    // items: [{ label, action }]. A 'custom' item swaps the menu for an
+    // inline prompt box instead of firing immediately. onSelect(action, promptText?)
+    // is called once an action is chosen.
+    function createSparkMenu(triggerEl, items, onSelect) {
+      let menuEl = null;
+      triggerEl.parentElement.classList.add('relative');
+
+      function close() {
+        if (!menuEl) return;
+        const el = menuEl;
+        menuEl = null;
+        closeMenu(el);
+        setTimeout(() => el.remove(), 160);
       }
 
-      // Add saved tokens
-      savedTokens.forEach(token => {
-        const option = document.createElement('option');
-        option.value = token.id;
-        option.textContent = `${token.name} (${token.token_masked})`;
-        tokenSelect.appendChild(option);
+      function renderItems() {
+        menuEl.innerHTML = '';
+        items.forEach(item => {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.textContent = item.label;
+          btn.className = 'block w-full text-left px-3 py-2 text-sm text-stone-600 hover:bg-stone-50';
+          btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (item.action === 'custom') {
+              renderCustomPrompt();
+            } else {
+              close();
+              onSelect(item.action);
+            }
+          });
+          menuEl.appendChild(btn);
+        });
+      }
+
+      function renderCustomPrompt() {
+        menuEl.innerHTML = '';
+        const wrap = document.createElement('div');
+        wrap.className = 'p-2 flex flex-col gap-2 w-56';
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.placeholder = 'e.g. add more excitement...';
+        input.className = 'w-full px-2 py-1.5 border border-line rounded-md text-xs';
+        const applyBtn = document.createElement('button');
+        applyBtn.type = 'button';
+        applyBtn.textContent = 'Apply';
+        applyBtn.className = 'bg-accent text-white text-xs font-semibold rounded-md px-2 py-1.5 cursor-pointer hover:opacity-90';
+        applyBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const val = input.value.trim();
+          if (!val) return;
+          close();
+          onSelect('custom', val);
+        });
+        input.addEventListener('click', (e) => e.stopPropagation());
+        input.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') applyBtn.click();
+        });
+        wrap.appendChild(input);
+        wrap.appendChild(applyBtn);
+        menuEl.appendChild(wrap);
+        input.focus();
+      }
+
+      triggerEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (menuEl) {
+          close();
+          return;
+        }
+        menuEl = document.createElement('div');
+        menuEl.className = 'absolute right-0 top-full mt-1 min-w-[9rem] bg-white border border-line rounded-lg shadow-lg py-1 z-50 transition-all duration-150 origin-top-right opacity-0 scale-95';
+        renderItems();
+        triggerEl.parentElement.appendChild(menuEl);
+        openMenu(menuEl);
       });
 
-      // Add "Enter manually..." option at the end
-      const manualOption = document.createElement('option');
-      manualOption.value = '__manual__';
-      manualOption.textContent = 'Enter manually...';
-      tokenSelect.appendChild(manualOption);
-    }
-
-    tokenSelect.addEventListener('change', () => {
-      if (tokenSelect.value === '__manual__') {
-        manualKeyInput.classList.remove('hidden');
-      } else {
-        manualKeyInput.classList.add('hidden');
-        manualKeyInput.value = '';
-      }
-    });
-
-    // Get API key (from saved token or manual input)
-    async function getApiKey() {
-      const selected = tokenSelect.value;
-
-      if (selected === '__manual__') {
-        return manualKeyInput.value.trim();
-      } else if (selected) {
-        // Fetch decrypted token
-        const res = await fetch(`/api/tokens/${selected}/decrypt`);
-        if (!res.ok) throw new Error('Failed to retrieve token');
-        const data = await res.json();
-        return data.token;
-      }
-
-      return '';
+      document.addEventListener('click', close);
     }
 
     async function pollJob() {
       try {
-        const res = await fetch(`/api/jobs/${jobId}`);
-        if (res.status === 404) {
+        const res = await fetch(withShare(`/api/jobs/${jobId}`));
+        if (res.status === 404 || res.status === 403) {
           clearInterval(pollTimer);
           showNotFound();
           return;
         }
         if (!res.ok) throw new Error('Job lookup failed');
         const job = await res.json();
+        applyJobMeta(job);
 
         const pct = job.total_slides > 0
           ? Math.round(10 + (job.current_slide / job.total_slides) * 85)
@@ -262,9 +423,9 @@
 
           // Refresh video with cache buster
           const cacheBuster = Date.now();
-          videoPlayer.src = `/api/jobs/${jobId}/video?t=${cacheBuster}`;
+          videoPlayer.src = withShare(`/api/jobs/${jobId}/video?t=${cacheBuster}`);
           videoPlayer.classList.remove('hidden');
-          downloadLink.href = `/api/jobs/${jobId}/video`;
+          downloadLink.href = withShare(`/api/jobs/${jobId}/video`);
           downloadLink.classList.remove('hidden');
 
           // Exit edit mode and reload transcript
@@ -290,7 +451,7 @@
 
     async function loadTranscript() {
       try {
-        const res = await fetch(`/api/jobs/${jobId}/transcript`);
+        const res = await fetch(withShare(`/api/jobs/${jobId}/transcript`));
         if (!res.ok) return;
         const slides = await res.json();
 
@@ -333,6 +494,47 @@
       }
     }
 
+    async function handleSlideAiAction(item, textarea, sparkBtn, action, promptText) {
+      let apiKey;
+      try {
+        apiKey = await getApiKey();
+      } catch (err) {
+        showToast('Failed to retrieve API key: ' + err.message, { type: 'error' });
+        return;
+      }
+      if (!apiKey) {
+        showToast('Select a token or enter an API key to use AI writing tools', { type: 'error' });
+        return;
+      }
+
+      textarea.disabled = true;
+      textarea.classList.add('opacity-50');
+      sparkBtn.disabled = true;
+
+      try {
+        const res = await fetch(withShare(`/api/jobs/${jobId}/slides/${item.slide}/ai-text`), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ api_key: apiKey, action, current_text: textarea.value, prompt: promptText })
+        });
+        if (!res.ok) throw new Error(await res.text());
+        const data = await res.json();
+        textarea.value = data.text;
+        item.text = data.text;
+        checkForChanges();
+        item.el.classList.toggle('changed', item.text.trim() !== item.originalText.trim());
+
+        const verb = action === 'regenerate' ? 'regenerated' : action === 'improve' ? 'improved' : 'rewritten';
+        showToast(`Slide #${item.slide} ${verb} with AI`, { type: 'success' });
+      } catch (err) {
+        showToast('AI action failed: ' + err.message, { type: 'error' });
+      } finally {
+        textarea.disabled = false;
+        textarea.classList.remove('opacity-50');
+        sparkBtn.disabled = false;
+      }
+    }
+
     function enterEditMode() {
       isEditMode = true;
       hasChanges = false;
@@ -359,6 +561,27 @@
         } else {
           item.el.appendChild(textarea);
         }
+
+        const toolbar = document.createElement('div');
+        toolbar.className = 'flex justify-end mt-1';
+        const sparkBtn = document.createElement('button');
+        sparkBtn.type = 'button';
+        sparkBtn.title = 'AI writing tools';
+        sparkBtn.className = 'flex items-center gap-1 text-xs text-accent hover:underline font-semibold px-1 py-0.5';
+        sparkBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M12 2l1.9 5.1L19 9l-5.1 1.9L12 16l-1.9-5.1L5 9l5.1-1.9L12 2z" />
+          <path d="M19 14l.7 1.9L21.6 16.6 19.9 17.3 19 19l-.9-1.7-1.7-.7 1.7-.7L19 14z" />
+          <path d="M5 14l.7 1.9L7.6 16.6 5.9 17.3 5 19l-.9-1.7L2.4 16.6l1.9-.7L5 14z" />
+        </svg> AI write`;
+        sparkBtn.addEventListener('click', (e) => e.stopPropagation());
+        toolbar.appendChild(sparkBtn);
+        item.el.appendChild(toolbar);
+
+        createSparkMenu(sparkBtn, [
+          { label: 'Re-Generate', action: 'regenerate' },
+          { label: 'Improve', action: 'improve' },
+          { label: 'Custom...', action: 'custom' },
+        ], (action, promptText) => handleSlideAiAction(item, textarea, sparkBtn, action, promptText));
       });
 
       updateEditButtons();
@@ -412,14 +635,15 @@
     function updateEditButtons() {
       transcriptActions.innerHTML = '';
 
-      // Hide edit controls while processing
-      if (isProcessing) {
+      // Hide edit controls while processing, or for view-only visitors
+      if (isProcessing || !canEdit) {
         return;
       }
 
       if (!isEditMode) {
         const editBtn = document.createElement('button');
         editBtn.type = 'button';
+        editBtn.id = 'editTranscriptBtn';
         editBtn.className = 'bg-transparent text-accent border border-accent px-3 py-1.5 text-xs rounded-md cursor-pointer hover:bg-accent hover:text-white';
         editBtn.textContent = 'Edit transcript';
         editBtn.addEventListener('click', enterEditMode);
@@ -445,20 +669,14 @@
     }
 
     // Regeneration modal
-    async function openRegenModal() {
+    function openRegenModal() {
       const changedSlides = getChangedSlides();
       changesSummary.textContent = `${changedSlides.length} slide(s) will be regenerated: ${changedSlides.map(s => '#' + s.slide).join(', ')}`;
-      tokenSelect.value = '';
-      manualKeyInput.classList.add('hidden');
-      manualKeyInput.value = '';
-      await loadTokens();
-      regenModal.classList.remove('hidden');
-      regenModal.classList.add('flex');
+      openDialog(regenModal);
     }
 
     function closeRegenModal() {
-      regenModal.classList.add('hidden');
-      regenModal.classList.remove('flex');
+      closeDialog(regenModal);
     }
 
     async function submitRegeneration() {
@@ -466,12 +684,12 @@
       try {
         apiKey = await getApiKey();
       } catch (err) {
-        alert('Failed to retrieve API key: ' + err.message);
+        showToast('Failed to retrieve API key: ' + err.message, { type: 'error' });
         return;
       }
 
       if (!apiKey) {
-        alert('Please select a token or enter an API key');
+        showToast('Please select a token or enter an API key', { type: 'error' });
         return;
       }
 
@@ -485,7 +703,7 @@
       regenConfirmBtn.textContent = 'Submitting...';
 
       try {
-        const res = await fetch(`/api/jobs/${jobId}/regenerate`, {
+        const res = await fetch(withShare(`/api/jobs/${jobId}/regenerate`), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -514,9 +732,10 @@
         statusText.textContent = 'Regenerating...';
 
         startPolling();
+        showToast('Regeneration started', { type: 'success' });
 
       } catch (err) {
-        alert('Regeneration failed: ' + err.message);
+        showToast('Regeneration failed: ' + err.message, { type: 'error' });
       } finally {
         regenConfirmBtn.disabled = false;
         regenConfirmBtn.textContent = 'Regenerate';
@@ -528,6 +747,171 @@
     regenConfirmBtn.addEventListener('click', submitRegeneration);
     regenModal.addEventListener('click', (e) => {
       if (e.target === regenModal) closeRegenModal();
+    });
+
+    // Edit Details modal (rename + optional description)
+    editDetailsBtn.addEventListener('click', () => {
+      titleInput.value = currentJob.title || '';
+      descriptionInput.value = currentJob.description || '';
+      openDialog(detailsModal);
+    });
+
+    function closeDetailsModal() {
+      closeDialog(detailsModal);
+    }
+
+    async function handleTitleDescAction(action) {
+      let apiKey;
+      try {
+        apiKey = await getApiKey();
+      } catch (err) {
+        showToast('Failed to retrieve API key: ' + err.message, { type: 'error' });
+        return;
+      }
+
+      if (!apiKey) {
+        showToast('Select a token or enter an API key to use AI writing tools', { type: 'error' });
+        return;
+      }
+
+      autoFillBtn.disabled = true;
+      autoFillBtnLabel.textContent = action === 'improve' ? 'Improving...' : 'Generating...';
+
+      try {
+        const res = await fetch(withShare(`/api/jobs/${jobId}/generate-details`), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            api_key: apiKey,
+            action,
+            current_title: titleInput.value,
+            current_description: descriptionInput.value,
+          })
+        });
+        if (!res.ok) throw new Error(await res.text());
+        const data = await res.json();
+        if (data.title) titleInput.value = data.title;
+        if (data.description) descriptionInput.value = data.description;
+        showToast(
+          action === 'improve' ? 'Improved with AI — review and Save' : 'AI suggestion filled in — review and Save',
+          { type: 'success' }
+        );
+      } catch (err) {
+        showToast('AI writing tool failed: ' + err.message, { type: 'error' });
+      } finally {
+        autoFillBtn.disabled = false;
+        autoFillBtnLabel.textContent = 'AI write';
+      }
+    }
+
+    createSparkMenu(autoFillBtn, [
+      { label: 'Generate', action: 'generate' },
+      { label: 'Improve', action: 'improve' },
+    ], handleTitleDescAction);
+
+    async function saveDetails() {
+      detailsSaveBtn.disabled = true;
+      detailsSaveBtn.textContent = 'Saving...';
+      try {
+        const res = await fetch(withShare(`/api/jobs/${jobId}/details`), {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: titleInput.value, description: descriptionInput.value })
+        });
+        if (!res.ok) throw new Error(await res.text());
+        applyJobMeta({
+          ...currentJob,
+          title: titleInput.value.trim() || null,
+          description: descriptionInput.value.trim() || null,
+        });
+        closeDetailsModal();
+        showToast('Details updated', { type: 'success' });
+      } catch (err) {
+        showToast('Failed to save: ' + err.message, { type: 'error' });
+      } finally {
+        detailsSaveBtn.disabled = false;
+        detailsSaveBtn.textContent = 'Save';
+      }
+    }
+
+    detailsModalClose.addEventListener('click', closeDetailsModal);
+    detailsCancelBtn.addEventListener('click', closeDetailsModal);
+    detailsSaveBtn.addEventListener('click', saveDetails);
+    detailsModal.addEventListener('click', (e) => {
+      if (e.target === detailsModal) closeDetailsModal();
+    });
+
+    // Share modal (owner only -- toggle link sharing on/off, view vs edit)
+    function updateShareModalView() {
+      const enabled = shareEnabledToggle.checked;
+      sharePermissionRow.classList.toggle('hidden', !enabled);
+      shareLinkRow.classList.toggle('hidden', !enabled);
+      if (enabled && currentJob.share_token) {
+        shareLinkInput.value = `${window.location.origin}/slide/${jobId}?share=${currentJob.share_token}`;
+      }
+    }
+
+    async function saveShareSettings() {
+      const checkedPermission = Array.from(sharePermissionInputs).find(r => r.checked);
+      const permission = checkedPermission ? checkedPermission.value : 'view';
+      try {
+        const res = await fetch(`/api/jobs/${jobId}/share`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ enabled: shareEnabledToggle.checked, permission })
+        });
+        if (!res.ok) throw new Error(await res.text());
+        const data = await res.json();
+        currentJob.share_enabled = data.share_enabled;
+        currentJob.share_permission = data.share_permission;
+        currentJob.share_token = data.share_token;
+        updateShareModalView();
+
+        if (data.share_enabled) {
+          showToast(`Link sharing on — anyone with the link can ${data.share_permission}`, { type: 'share', duration: 5000 });
+        } else {
+          showToast('Link sharing turned off', { type: 'info' });
+        }
+      } catch (err) {
+        showToast('Failed to update sharing: ' + err.message, { type: 'error' });
+        shareEnabledToggle.checked = !!currentJob.share_enabled;
+        updateShareModalView();
+      }
+    }
+
+    shareBtn.addEventListener('click', () => {
+      shareEnabledToggle.checked = !!currentJob.share_enabled;
+      const perm = currentJob.share_permission || 'view';
+      sharePermissionInputs.forEach(r => { r.checked = (r.value === perm); });
+      updateShareModalView();
+      openDialog(shareModal);
+    });
+
+    shareEnabledToggle.addEventListener('change', saveShareSettings);
+    sharePermissionInputs.forEach(r => {
+      r.addEventListener('change', () => {
+        if (shareEnabledToggle.checked) saveShareSettings();
+      });
+    });
+
+    shareCopyBtn.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(shareLinkInput.value);
+        const original = shareCopyBtn.textContent;
+        shareCopyBtn.textContent = 'Copied!';
+        setTimeout(() => { shareCopyBtn.textContent = original; }, 1500);
+      } catch (err) {
+        shareLinkInput.select();
+      }
+    });
+
+    function closeShareModal() {
+      closeDialog(shareModal);
+    }
+    shareModalClose.addEventListener('click', closeShareModal);
+    shareDoneBtn.addEventListener('click', closeShareModal);
+    shareModal.addEventListener('click', (e) => {
+      if (e.target === shareModal) closeShareModal();
     });
 
     // Video time sync
@@ -589,11 +973,15 @@
 
     userMenuBtn?.addEventListener('click', (e) => {
       e.stopPropagation();
-      userDropdown.classList.toggle('hidden');
+      if (userDropdown.classList.contains('hidden')) {
+        openMenu(userDropdown);
+      } else {
+        closeMenu(userDropdown);
+      }
     });
 
     document.addEventListener('click', () => {
-      userDropdown?.classList.add('hidden');
+      closeMenu(userDropdown);
     });
 
     checkAuth();

@@ -1,0 +1,38 @@
+/* Smooth cross-document page transitions. Progressive enhancement -
+   browsers without View Transitions support just ignore this. */
+@view-transition {
+  navigation: auto;
+}
+
+/* The UA default blends old/new with mix-blend-mode: plus-lighter, which
+   washes out to a bright flash where the two slide past each other.
+   Force a normal blend so it reads as a clean slide+fade instead. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  mix-blend-mode: normal;
+  animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+::view-transition-old(root) {
+  animation: sp-slide-fade-out 0.2s both;
+  z-index: 1;
+}
+
+::view-transition-new(root) {
+  animation: sp-slide-fade-in 0.28s both;
+  z-index: 2;
+}
+
+@keyframes sp-slide-fade-out {
+  to { opacity: 0; transform: translateY(-20px); }
+}
+
+@keyframes sp-slide-fade-in {
+  from { opacity: 0; transform: translateY(20px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  @view-transition {
+    navigation: none;
+  }
+}

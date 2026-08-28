@@ -2,6 +2,7 @@ import asyncio
 import base64
 import json
 import os
+import re
 import subprocess
 from typing import Callable, List, Optional
 
@@ -108,6 +109,122 @@ def get_slide_narration(
                 import time
                 time.sleep(3)
     raise RuntimeError(f"Narration request failed after {max_retries} attempts: {last_err}")
+
+
+def _chat_completion(prompt: str, api_key: str, model: str, timeout: int = 30) -> str:
+    """POST one prompt to the narration LLM endpoint, return the raw text reply."""
+    payload = {"model": model, "messages": [{"role": "user", "content": prompt}]}
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    response = requests.post(NARRATION_API_URL, headers=headers, json=payload, timeout=timeout)
+    response.raise_for_status()
+    return response.json()["choices"][0]["message"]["content"].strip()
+
+
+def _parse_json_reply(content: str) -> dict:
+    """Models sometimes wrap JSON in a markdown fence or add prose around it."""
+    content = re.sub(r"^```(?:json)?\s*|\s*```$", "", content.strip())
+    match = re.search(r"\{.*\}", content, re.S)
+    return json.loads(match.group(0) if match else content)
+
+
+def _script_from_transcript(transcript: List[dict]) -> str:
+    return "\n".join(f"Slide {s['slide']}: {s['text']}" for s in transcript)
+
+
+GENERATE_TITLE_DESCRIPTION_PROMPT = (
+    "Here is the slide-by-slide narration script for a presentation. Based on "
+    "it, suggest a short, descriptive title (under 8 words, no quotes) and a "
+    "one-sentence description (under 25 words) that together would help "
+    "someone recognize this presentation in a list of many.\n\n"
+    "{script}\n\n"
+    "Respond with ONLY a JSON object, no other text, in this exact shape: "
+    '{{"title": "...", "description": "..."}}'
+)
+
+IMPROVE_TITLE_DESCRIPTION_PROMPT = (
+    "Here is a presentation's current title and description, and its full "
+    "narration script for context. Improve the wording, grammar, and clarity "
+    "of the title and description WITHOUT changing the information they "
+    "convey. If either is blank, write one from scratch based on the script.\n\n"
+    "Current title: {title}\n"
+    "Current description: {description}\n\n"
+    "Narration script:\n{script}\n\n"
+    "Respond with ONLY a JSON object, no other text, in this exact shape: "
+    '{{"title": "...", "description": "..."}}'
+)
+
+
+def _clean_title_description(parsed: dict) -> dict:
+    return {
+        "title": (parsed.get("title") or "").strip()[:200] or None,
+        "description": (parsed.get("description") or "").strip()[:1000] or None,
+    }
+
+
+def generate_title_description(
+    transcript: List[dict],
+    api_key: str,
+    model: str = "claude-sonnet-4-5",
+    timeout: int = 30,
+) -> dict:
+    """Suggest a fresh title + description for the whole deck, from scratch."""
+    prompt = GENERATE_TITLE_DESCRIPTION_PROMPT.format(script=_script_from_transcript(transcript))
+    content = _chat_completion(prompt, api_key, model, timeout=timeout)
+    return _clean_title_description(_parse_json_reply(content))
+
+
+def improve_title_description(
+    current_title: Optional[str],
+    current_description: Optional[str],
+    transcript: List[dict],
+    api_key: str,
+    model: str = "claude-sonnet-4-5",
+    timeout: int = 30,
+) -> dict:
+    """Polish an existing title + description without changing their meaning."""
+    prompt = IMPROVE_TITLE_DESCRIPTION_PROMPT.format(
+        title=current_title or "(none)",
+        description=current_description or "(none)",
+        script=_script_from_transcript(transcript),
+    )
+    content = _chat_completion(prompt, api_key, model, timeout=timeout)
+    return _clean_title_description(_parse_json_reply(content))
+
+
+IMPROVE_NARRATION_PROMPT = (
+    "Here is spoken narration for one slide of a presentation. Improve its "
+    "grammar, clarity, and flow as a presenter would say it aloud, without "
+    "changing its meaning or the information it conveys. Do not add a "
+    "preamble or explanation -- respond with ONLY the improved narration "
+    "text.\n\n{text}"
+)
+
+CUSTOM_NARRATION_PROMPT = (
+    "Here is spoken narration for one slide of a presentation:\n\n{text}\n\n"
+    "Rewrite it according to this instruction: {instruction}\n"
+    "Keep it as natural spoken narration a presenter would say aloud. Do not "
+    "add a preamble or explanation -- respond with ONLY the rewritten "
+    "narration text."
+)
+
+
+def edit_slide_narration(
+    current_text: str,
+    api_key: str,
+    model: str = "claude-sonnet-4-5",
+    instruction: Optional[str] = None,
+    timeout: int = 30,
+) -> str:
+    """Improve existing narration, or rewrite it per a custom instruction."""
+    prompt = (
+        CUSTOM_NARRATION_PROMPT.format(text=current_text, instruction=instruction)
+        if instruction
+        else IMPROVE_NARRATION_PROMPT.format(text=current_text)
+    )
+    return _chat_completion(prompt, api_key, model, timeout=timeout)
 
 
 # ---------------------------------------------------------------------------
@@ -265,8 +382,10 @@ def run_pipeline(
     voice: str = "en-US-ChristopherNeural",
     model: str = "claude-sonnet-4-5",
     progress_cb: Optional[ProgressCB] = None,
-) -> str:
-    """Runs the full pipeline for one uploaded file. Returns path to final mp4."""
+) -> dict:
+    """Runs the full pipeline for one uploaded file. Returns
+    {"video_path": ..., "title": ..., "description": ...} -- title/description
+    are a best-effort AI suggestion and may be None if that step fails."""
 
     def report(stage, cur=None, total=None, msg=None):
         if progress_cb:
@@ -320,5 +439,13 @@ def run_pipeline(
     with open(transcript_path, "w", encoding="utf-8") as f:
         json.dump(narrations, f, ensure_ascii=False, indent=2)
 
+    report("naming", total, total, "Naming the presentation")
+    title, description = None, None
+    try:
+        suggestion = generate_title_description(narrations, api_key, model=model)
+        title, description = suggestion["title"], suggestion["description"]
+    except Exception:
+        pass  # naming is a nice-to-have; never fail the whole job over it
+
     report("done", total, total, "Done")
-    return final_path
+    return {"video_path": final_path, "title": title, "description": description}
