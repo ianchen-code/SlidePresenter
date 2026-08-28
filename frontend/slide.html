@@ -38,7 +38,14 @@
     <a href="/" class="text-accent no-underline font-semibold hover:underline">&larr; All slides</a>
 
     <div class="flex items-center gap-3">
-      <button type="button" id="shareBtn" class="hidden bg-transparent text-accent border border-accent px-3 py-1.5 text-xs rounded-md cursor-pointer hover:bg-accent hover:text-white font-semibold">Share</button>
+      <a id="downloadLink" download="presentation.mp4" class="hidden bg-accent text-white border-none p-1.5 rounded-md hover:opacity-90 transition-all" aria-label="Download video" title="Download video">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+          <path d="M7 10l5 5 5-5" />
+          <path d="M12 15V3" />
+        </svg>
+      </a>
+      <button type="button" id="shareBtn" class="hidden bg-transparent text-ink border border-line px-3 py-1.5 text-xs rounded-md cursor-pointer hover:bg-stone-100 font-semibold">Share</button>
 
     <!-- Auth UI -->
     <div id="authContainer" class="flex items-center gap-2">
@@ -82,7 +89,6 @@
           <video id="videoPlayer" controls class="hidden w-full h-full"></video>
         </div>
         <div id="errorText" class="text-red-600 text-sm mt-3" role="alert"></div>
-        <a class="inline-block mt-3 text-accent font-semibold no-underline hover:underline hidden" id="downloadLink" download="presentation.mp4">Download video</a>
       </div>
 
       <div class="flex-1 min-w-[280px] max-w-[400px] hidden sticky top-8 max-md:static max-md:max-w-none max-md:w-full" id="transcriptCol">
