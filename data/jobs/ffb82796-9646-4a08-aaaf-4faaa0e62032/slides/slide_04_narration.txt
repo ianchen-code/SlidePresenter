@@ -1,0 +1,5 @@
+Let me walk you through our preprocessing pipeline. First, we apply a notch filter at 60 Hertz to remove line noise. Second, we use a bandpass filter from 0.1 to 40 Hertz. Third, we average reference the data. Fourth, we perform ICA ocular artifact removal to clean up eye movement contamination. 
+
+In step five, we extract epochs from negative 0.2 to 2.0 seconds, with a baseline correction applied from negative 0.2 to 0 seconds. For step six, we set a rejection threshold of 150 microvolts peak-to-peak, which automatically drops any epoch exceeding this value. It's important to note that the number of epochs retained varies across subjects. In step seven, each surviving epoch is tagged as either 1 for correct trials—corresponding to event code 201—or 0 for incorrect trials, which is event code 200. Finally, after epoching, we resample the data to 128 Hertz.
+
+For validation, we use GroupKFold-by-subject. With approximately 256 subjects and N_SPLITS set to 5, each fold holds out roughly one-fifth of the subjects—that's about 51 subjects—as the test set, while training on the remaining subjects.

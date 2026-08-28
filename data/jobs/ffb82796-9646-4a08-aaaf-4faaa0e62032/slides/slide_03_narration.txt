@@ -1,0 +1,7 @@
+Let me walk you through our experimental protocol. The timeline shows how each trial is structured.
+
+We begin with a fixation cross presented for one thousand milliseconds. This is followed by our first stimulus, S1, which lasts two thousand milliseconds and displays a parabolic function. After S1, there's an interstimulus interval, or ISI, of one thousand milliseconds.
+
+Next comes our second stimulus, S2, highlighted here in blue, which is presented for five thousand milliseconds. This is a fixed two-second EEG length recording window. S2 shows the equation y equals x squared. Following S2, there's another ISI of one thousand milliseconds.
+
+Now, looking at our trigger codes: At the start, we send trigger eleven for trials with the correct equation, and trigger ten for trials with an incorrect equation. During the S2 presentation phase, we send triggers sixty-one through one-twenty, which correspond to the various questions being presented. Finally, at the end of the trial, we send trigger two-oh-one when the participant answers correctly, and trigger two hundred when they answer incorrectly.

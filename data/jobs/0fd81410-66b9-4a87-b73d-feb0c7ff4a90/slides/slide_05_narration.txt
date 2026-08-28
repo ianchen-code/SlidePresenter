@@ -1,0 +1,9 @@
+Looking at EEG data dimension, we can compare two different approaches: analyzing the data in Channel by Time format versus Component by Time format.
+
+On the left side, we have the Channel by Time representations using two different encoder architectures - EEGNet on top and MLP on the bottom. Both show subject-level pooled feature t-SNE plots using a single shared model trained in-sample, where the dot size represents prediction error.
+
+On the right side, we see the same two architectures applied to Component by Time data. What's interesting here is how the data structure differs between these two dimensional approaches.
+
+The color scale across all plots represents time, ranging from about 10 to 50 time points, shown in this gradient from dark blue to yellow. You can see temporal patterns in how the points cluster - notice particularly in the bottom right Component by Time MLP plot how there's a clear separation with the yellow points, representing later time points, clustering in the upper left, while the darker blue points from earlier time periods cluster in the lower right.
+
+This visualization helps us understand how different data representations and model architectures organize the EEG features in lower-dimensional space, with prediction error indicated by the varying dot sizes.

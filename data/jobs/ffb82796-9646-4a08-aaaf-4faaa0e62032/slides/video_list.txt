@@ -1,0 +1,5 @@
+file '/Users/ianchen/Desktop/sideproject/slidepresenter/slide-to-video-app/data/jobs/ffb82796-9646-4a08-aaaf-4faaa0e62032/slides/slide_01.mp4'
+file '/Users/ianchen/Desktop/sideproject/slidepresenter/slide-to-video-app/data/jobs/ffb82796-9646-4a08-aaaf-4faaa0e62032/slides/slide_02.mp4'
+file '/Users/ianchen/Desktop/sideproject/slidepresenter/slide-to-video-app/data/jobs/ffb82796-9646-4a08-aaaf-4faaa0e62032/slides/slide_03.mp4'
+file '/Users/ianchen/Desktop/sideproject/slidepresenter/slide-to-video-app/data/jobs/ffb82796-9646-4a08-aaaf-4faaa0e62032/slides/slide_04.mp4'
+file '/Users/ianchen/Desktop/sideproject/slidepresenter/slide-to-video-app/data/jobs/ffb82796-9646-4a08-aaaf-4faaa0e62032/slides/slide_05.mp4'

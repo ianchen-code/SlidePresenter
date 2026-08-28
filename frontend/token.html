@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Token Management</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            accent: '#d97757',
+            bg: '#faf9f6',
+            ink: '#1f1c19',
+            line: '#e5e0d8',
+          }
+        }
+      }
+    }
+  </script>
+</head>
+<body class="font-sans bg-bg text-ink max-w-3xl mx-auto px-5 py-12 min-h-screen">
+  <a href="/" class="text-accent no-underline font-semibold mb-4 inline-block hover:underline">&larr; All slides</a>
+
+  <header class="flex justify-between items-center mb-8">
+    <h1 class="text-2xl font-semibold">API Tokens</h1>
+    <div class="flex gap-3 items-center">
+      <button class="bg-accent text-white border-none rounded-lg px-4 py-2.5 text-sm font-semibold cursor-pointer hover:opacity-90" id="addTokenBtn">+ Add Token</button>
+
+      <!-- Auth UI -->
+      <div id="authContainer" class="flex items-center gap-2 ml-2">
+        <a id="loginBtn" href="/login" class="hidden text-stone-600 font-semibold text-sm hover:text-accent">Sign in</a>
+        <div id="userMenu" class="hidden relative">
+          <button id="userMenuBtn" class="flex items-center gap-2 text-sm">
+            <img id="userAvatar" src="" alt="" class="w-8 h-8 rounded-full border border-line">
+          </button>
+          <div id="userDropdown" class="hidden absolute right-0 mt-2 w-48 bg-white border border-line rounded-lg shadow-lg py-1 z-50">
+            <div class="px-4 py-2 border-b border-line">
+              <p id="userName" class="text-sm font-medium text-stone-700 truncate"></p>
+              <p id="userEmail" class="text-xs text-stone-500 truncate"></p>
+            </div>
+            <a href="/auth/logout" class="block px-4 py-2 text-sm text-stone-600 hover:bg-stone-50">Sign out</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <div id="tokenList" class="flex flex-col gap-3"></div>
+
+  <div id="emptyState" class="text-center py-16 text-stone-500 hidden">
+    <p class="mb-5">No tokens saved yet. Add your first API token to get started.</p>
+    <button class="bg-accent text-white border-none rounded-lg px-4 py-2.5 text-sm font-semibold cursor-pointer hover:opacity-90" id="addTokenBtnEmpty">+ Add Token</button>
+  </div>
+
+  <!-- Add/Edit Token Modal -->
+  <div class="hidden fixed inset-0 bg-black/40 z-50 items-center justify-center" id="tokenModal">
+    <div class="bg-white rounded-xl w-full max-w-md mx-5 shadow-2xl">
+      <div class="px-6 py-5 border-b border-line flex justify-between items-center">
+        <h2 id="modalTitle" class="text-lg font-semibold m-0">Add Token</h2>
+        <button class="bg-transparent border-none text-2xl cursor-pointer text-stone-500 hover:text-ink leading-none" id="modalClose">&times;</button>
+      </div>
+      <div class="p-6">
+        <div class="mb-4">
+          <label for="tokenName" class="text-sm font-semibold text-stone-600 block mb-2">Name</label>
+          <input type="text" id="tokenName" placeholder="e.g., My Anthropic Key" class="w-full px-3 py-2.5 border border-line rounded-lg text-sm bg-white">
+          <p class="text-xs text-stone-500 mt-1.5">A friendly name to identify this token</p>
+        </div>
+        <div class="mb-4">
+          <label for="tokenProvider" class="text-sm font-semibold text-stone-600 block mb-2">Provider</label>
+          <select id="tokenProvider" class="w-full px-3 py-2.5 border border-line rounded-lg text-sm bg-white">
+            <option value="anthropic">Anthropic</option>
+            <option value="openai">OpenAI</option>
+            <option value="google">Google</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        <div class="mb-4">
+          <label for="tokenValue" class="text-sm font-semibold text-stone-600 block mb-2">API Token</label>
+          <input type="password" id="tokenValue" placeholder="sk-ant-..." class="w-full px-3 py-2.5 border border-line rounded-lg text-sm bg-white">
+          <p class="text-xs text-stone-500 mt-1.5">Your token is encrypted before storage</p>
+        </div>
+      </div>
+      <div class="px-6 py-4 border-t border-line flex justify-end gap-3">
+        <button class="bg-transparent text-ink border border-line rounded-lg px-4 py-2.5 text-sm font-semibold cursor-pointer hover:bg-stone-100" id="cancelBtn">Cancel</button>
+        <button class="bg-accent text-white border-none rounded-lg px-4 py-2.5 text-sm font-semibold cursor-pointer hover:opacity-90" id="saveBtn">Save Token</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Delete Confirmation Modal -->
+  <div class="hidden fixed inset-0 bg-black/40 z-50 items-center justify-center" id="deleteModal">
+    <div class="bg-white rounded-xl w-full max-w-md mx-5 shadow-2xl">
+      <div class="px-6 py-5 border-b border-line flex justify-between items-center">
+        <h2 class="text-lg font-semibold m-0">Delete Token</h2>
+        <button class="bg-transparent border-none text-2xl cursor-pointer text-stone-500 hover:text-ink leading-none" id="deleteModalClose">&times;</button>
+      </div>
+      <div class="p-6">
+        <p>Are you sure you want to delete "<strong id="deleteTokenName"></strong>"? This action cannot be undone.</p>
+      </div>
+      <div class="px-6 py-4 border-t border-line flex justify-end gap-3">
+        <button class="bg-transparent text-ink border border-line rounded-lg px-4 py-2.5 text-sm font-semibold cursor-pointer hover:bg-stone-100" id="deleteCancelBtn">Cancel</button>
+        <button class="bg-red-500 text-white border-none rounded-lg px-4 py-2.5 text-sm font-semibold cursor-pointer hover:opacity-90" id="deleteConfirmBtn">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <footer class="fixed bottom-4 right-6 text-xs text-stone-400">
+    &copy; <span id="year"></span> ianchen. All rights reserved.
+  </footer>
+  <script>document.getElementById('year').textContent = new Date().getFullYear();</script>
+
+  <script>
+    const tokenList = document.getElementById('tokenList');
+    const emptyState = document.getElementById('emptyState');
+    const addTokenBtn = document.getElementById('addTokenBtn');
+    const addTokenBtnEmpty = document.getElementById('addTokenBtnEmpty');
+
+    // Token modal elements
+    const tokenModal = document.getElementById('tokenModal');
+    const modalTitle = document.getElementById('modalTitle');
+    const modalClose = document.getElementById('modalClose');
+    const tokenName = document.getElementById('tokenName');
+    const tokenProvider = document.getElementById('tokenProvider');
+    const tokenValue = document.getElementById('tokenValue');
+    const cancelBtn = document.getElementById('cancelBtn');
+    const saveBtn = document.getElementById('saveBtn');
+
+    // Delete modal elements
+    const deleteModal = document.getElementById('deleteModal');
+    const deleteModalClose = document.getElementById('deleteModalClose');
+    const deleteTokenName = document.getElementById('deleteTokenName');
+    const deleteCancelBtn = document.getElementById('deleteCancelBtn');
+    const deleteConfirmBtn = document.getElementById('deleteConfirmBtn');
+
+    let editingTokenId = null;
+    let deletingTokenId = null;
+
+    // Load tokens
+    async function loadTokens() {
+      try {
+        const res = await fetch('/api/tokens');
+        const tokens = await res.json();
+
+        if (tokens.length === 0) {
+          tokenList.classList.add('hidden');
+          emptyState.classList.remove('hidden');
+          return;
+        }
+
+        tokenList.classList.remove('hidden');
+        emptyState.classList.add('hidden');
+
+        tokenList.innerHTML = tokens.map(token => {
+          const date = new Date(token.created_at);
+          const dateStr = date.toLocaleDateString();
+          const lastUsed = token.last_used_at
+            ? new Date(token.last_used_at).toLocaleDateString()
+            : 'Never';
+          return `
+            <div class="bg-white border border-line rounded-xl px-5 py-4 flex justify-between items-center" data-id="${token.id}">
+              <div class="flex-1 min-w-0">
+                <div class="font-semibold text-base mb-1">
+                  ${escapeHtml(token.name)}
+                  <span class="inline-block px-2 py-0.5 rounded-full text-xs font-semibold uppercase bg-indigo-100 text-indigo-800 ml-2">${escapeHtml(token.provider)}</span>
+                </div>
+                <div class="text-sm text-stone-500">
+                  <span class="font-mono text-xs bg-stone-100 px-1.5 py-0.5 rounded">${escapeHtml(token.token_masked)}</span>
+                  &bull; Added ${dateStr} &bull; Last used: ${lastUsed}
+                </div>
+              </div>
+              <div class="flex gap-2">
+                <button class="bg-transparent text-ink border border-line rounded-lg px-3 py-1.5 text-sm font-semibold cursor-pointer hover:bg-stone-100 edit-btn" data-id="${token.id}">Edit</button>
+                <button class="bg-red-500 text-white border-none rounded-lg px-3 py-1.5 text-sm font-semibold cursor-pointer hover:opacity-90 delete-btn" data-id="${token.id}" data-name="${escapeHtml(token.name)}">Delete</button>
+              </div>
+            </div>
+          `;
+        }).join('');
+
+        // Add event listeners
+        document.querySelectorAll('.edit-btn').forEach(btn => {
+          btn.addEventListener('click', () => openEditModal(btn.dataset.id));
+        });
+        document.querySelectorAll('.delete-btn').forEach(btn => {
+          btn.addEventListener('click', () => openDeleteModal(btn.dataset.id, btn.dataset.name));
+        });
+      } catch (err) {
+        console.error('Failed to load tokens:', err);
+      }
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // Add token modal
+    function openAddModal() {
+      editingTokenId = null;
+      modalTitle.textContent = 'Add Token';
+      tokenName.value = '';
+      tokenProvider.value = 'anthropic';
+      tokenValue.value = '';
+      tokenValue.placeholder = 'sk-ant-...';
+      saveBtn.textContent = 'Save Token';
+      tokenModal.classList.remove('hidden');
+      tokenModal.classList.add('flex');
+    }
+
+    // Edit token modal
+    async function openEditModal(tokenId) {
+      try {
+        const res = await fetch(`/api/tokens/${tokenId}`);
+        const token = await res.json();
+
+        editingTokenId = tokenId;
+        modalTitle.textContent = 'Edit Token';
+        tokenName.value = token.name;
+        tokenProvider.value = token.provider;
+        tokenValue.value = '';
+        tokenValue.placeholder = 'Leave blank to keep current token';
+        saveBtn.textContent = 'Update Token';
+        tokenModal.classList.remove('hidden');
+        tokenModal.classList.add('flex');
+      } catch (err) {
+        alert('Failed to load token: ' + err.message);
+      }
+    }
+
+    function closeTokenModal() {
+      tokenModal.classList.add('hidden');
+      tokenModal.classList.remove('flex');
+      editingTokenId = null;
+    }
+
+    async function saveToken() {
+      const name = tokenName.value.trim();
+      const provider = tokenProvider.value;
+      const token = tokenValue.value.trim();
+
+      if (!name) {
+        alert('Please enter a name');
+        return;
+      }
+
+      if (!editingTokenId && !token) {
+        alert('Please enter an API token');
+        return;
+      }
+
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Saving...';
+
+      try {
+        if (editingTokenId) {
+          // Update existing token
+          const body = { name, provider };
+          if (token) body.token = token;
+
+          const res = await fetch(`/api/tokens/${editingTokenId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+          });
+          if (!res.ok) throw new Error(await res.text());
+        } else {
+          // Create new token
+          const res = await fetch('/api/tokens', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, provider, token })
+          });
+          if (!res.ok) throw new Error(await res.text());
+        }
+
+        closeTokenModal();
+        loadTokens();
+      } catch (err) {
+        alert('Failed to save token: ' + err.message);
+      } finally {
+        saveBtn.disabled = false;
+        saveBtn.textContent = editingTokenId ? 'Update Token' : 'Save Token';
+      }
+    }
+
+    // Delete token modal
+    function openDeleteModal(tokenId, name) {
+      deletingTokenId = tokenId;
+      deleteTokenName.textContent = name;
+      deleteModal.classList.remove('hidden');
+      deleteModal.classList.add('flex');
+    }
+
+    function closeDeleteModal() {
+      deleteModal.classList.add('hidden');
+      deleteModal.classList.remove('flex');
+      deletingTokenId = null;
+    }
+
+    async function confirmDelete() {
+      if (!deletingTokenId) return;
+
+      deleteConfirmBtn.disabled = true;
+      deleteConfirmBtn.textContent = 'Deleting...';
+
+      try {
+        const res = await fetch(`/api/tokens/${deletingTokenId}`, {
+          method: 'DELETE'
+        });
+        if (!res.ok) throw new Error(await res.text());
+
+        closeDeleteModal();
+        loadTokens();
+      } catch (err) {
+        alert('Failed to delete token: ' + err.message);
+      } finally {
+        deleteConfirmBtn.disabled = false;
+        deleteConfirmBtn.textContent = 'Delete';
+      }
+    }
+
+    // Event listeners
+    addTokenBtn.addEventListener('click', openAddModal);
+    addTokenBtnEmpty.addEventListener('click', openAddModal);
+    modalClose.addEventListener('click', closeTokenModal);
+    cancelBtn.addEventListener('click', closeTokenModal);
+    saveBtn.addEventListener('click', saveToken);
+    tokenModal.addEventListener('click', (e) => {
+      if (e.target === tokenModal) closeTokenModal();
+    });
+
+    deleteModalClose.addEventListener('click', closeDeleteModal);
+    deleteCancelBtn.addEventListener('click', closeDeleteModal);
+    deleteConfirmBtn.addEventListener('click', confirmDelete);
+    deleteModal.addEventListener('click', (e) => {
+      if (e.target === deleteModal) closeDeleteModal();
+    });
+
+    // Auth state
+    const loginBtn = document.getElementById('loginBtn');
+    const userMenu = document.getElementById('userMenu');
+    const userMenuBtn = document.getElementById('userMenuBtn');
+    const userDropdown = document.getElementById('userDropdown');
+    const userAvatar = document.getElementById('userAvatar');
+    const userName = document.getElementById('userName');
+    const userEmail = document.getElementById('userEmail');
+
+    async function checkAuth() {
+      try {
+        const res = await fetch('/api/auth/me');
+        const data = await res.json();
+
+        if (data.authenticated) {
+          loginBtn.classList.add('hidden');
+          userMenu.classList.remove('hidden');
+          userAvatar.src = data.user.picture || '';
+          userName.textContent = data.user.name || '';
+          userEmail.textContent = data.user.email || '';
+        } else {
+          loginBtn.classList.remove('hidden');
+          userMenu.classList.add('hidden');
+        }
+      } catch (err) {
+        console.error('Failed to check auth:', err);
+        loginBtn.classList.remove('hidden');
+      }
+    }
+
+    userMenuBtn?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      userDropdown.classList.toggle('hidden');
+    });
+
+    document.addEventListener('click', () => {
+      userDropdown?.classList.add('hidden');
+    });
+
+    // Initial load
+    loadTokens();
+    checkAuth();
+  </script>
+</body>
+</html>

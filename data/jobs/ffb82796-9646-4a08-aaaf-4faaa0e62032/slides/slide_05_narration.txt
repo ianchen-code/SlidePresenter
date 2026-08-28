@@ -1,0 +1,7 @@
+Let's look at the EEG data dimension and how we can organize it. We have two main ways of structuring this data: Channel by Time, shown on the left, and Component by Time, on the right.
+
+On the left side, we're looking at Channel by Time organization. The top panel shows results using EEGNet as our encoder architecture, while the bottom panel shows results using MLP. These are t-SNE visualizations of subject-level pooled features using a single shared model with in-sample data. The color coding here represents time, ranging from about 10 milliseconds in the darker purple regions to around 50 milliseconds in the yellow-green areas. You'll also notice that the dot size corresponds to prediction error.
+
+On the right side, we have the same architectures - EEGNet on top and MLP on bottom - but now we're organizing the data by Component by Time instead of Channel by Time. Again, we're using the same t-SNE approach with subject-level pooled features, and the same color scheme for time and dot sizing for prediction error.
+
+What's interesting here is how the temporal patterns emerge differently depending on whether we organize our data by channels or by components, and you can see this varies between the two encoder architectures as well.

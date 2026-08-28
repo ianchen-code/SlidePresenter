@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Slide Presentation</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            accent: '#d97757',
+            bg: '#faf9f6',
+            ink: '#1f1c19',
+            line: '#e5e0d8',
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* Custom styles that are difficult to express with Tailwind utilities */
+    .transcript-item.active { background: #fdece4; color: #1f1c19; }
+    .transcript-item.changed { border-left: 3px solid #d97757; }
+    .transcript-item.editing:hover { background: transparent; }
+    video.disabled { pointer-events: none; opacity: 0.5; }
+    a.disabled { pointer-events: none; opacity: 0.5; }
+    .transcript-panel.disabled { pointer-events: none; opacity: 0.6; }
+    .transcript-panel.disabled .transcript-item { cursor: default; }
+  </style>
+</head>
+<body class="font-sans bg-bg text-ink max-w-5xl mx-auto px-5 py-12 min-h-screen">
+  <div class="flex justify-between items-center mb-4">
+    <a href="/" class="text-accent no-underline font-semibold hover:underline">&larr; All slides</a>
+
+    <!-- Auth UI -->
+    <div id="authContainer" class="flex items-center gap-2">
+      <a id="loginBtn" href="/login" class="hidden text-stone-600 font-semibold text-sm hover:text-accent">Sign in</a>
+      <div id="userMenu" class="hidden relative">
+        <button id="userMenuBtn" class="flex items-center gap-2 text-sm">
+          <img id="userAvatar" src="" alt="" class="w-8 h-8 rounded-full border border-line">
+        </button>
+        <div id="userDropdown" class="hidden absolute right-0 mt-2 w-48 bg-white border border-line rounded-lg shadow-lg py-1 z-50">
+          <div class="px-4 py-2 border-b border-line">
+            <p id="userName" class="text-sm font-medium text-stone-700 truncate"></p>
+            <p id="userEmail" class="text-xs text-stone-500 truncate"></p>
+          </div>
+          <a href="/auth/logout" class="block px-4 py-2 text-sm text-stone-600 hover:bg-stone-50">Sign out</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="content">
+    <div class="flex gap-8 items-start max-md:flex-col">
+      <div class="flex-1 min-w-0">
+        <h1 class="text-2xl font-semibold mb-1">Slide Presentation</h1>
+        <p class="text-stone-500 mt-0 mb-8">Job ID: <span class="font-mono text-sm text-stone-500 break-all" id="jobIdDisplay"></span></p>
+
+        <div id="status">
+          <div class="bg-line rounded-md h-2.5 overflow-hidden">
+            <div class="bg-accent h-full w-0 transition-all duration-300" id="barFill"></div>
+          </div>
+          <div id="statusText" class="text-sm text-stone-600 mt-2">Loading...</div>
+          <div id="errorText" class="text-red-600 text-sm mt-2"></div>
+          <video id="videoPlayer" controls class="w-full mt-5 rounded-lg hidden"></video>
+          <br>
+          <a class="inline-block mt-3 text-accent font-semibold no-underline hover:underline hidden" id="downloadLink" download="presentation.mp4">Download video</a>
+        </div>
+      </div>
+
+      <div class="flex-1 min-w-[280px] max-w-[400px] hidden sticky top-8 max-md:static max-md:max-w-none max-md:w-full" id="transcriptCol">
+        <div class="flex justify-between items-center mb-2.5 flex-wrap gap-2">
+          <h2 class="text-base font-semibold m-0">Narration transcript</h2>
+          <div class="flex gap-2 items-center" id="transcriptActions">
+            <button type="button" id="editTranscriptBtn" class="bg-transparent text-accent border border-accent px-3 py-1.5 text-xs rounded-md cursor-pointer hover:bg-accent hover:text-white">Edit transcript</button>
+          </div>
+        </div>
+        <div class="transcript-panel border border-line rounded-lg bg-white max-h-[70vh] overflow-y-auto p-1.5" id="transcriptPanel"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="notFound" class="text-center py-16 hidden">
+    <h1 class="text-accent text-2xl font-semibold">Job Not Found</h1>
+    <p class="text-stone-500">The requested job could not be found. It may have expired or never existed.</p>
+    <a href="/" class="text-accent font-semibold no-underline hover:underline">Create a new video</a>
+  </div>
+
+  <!-- Regeneration Modal -->
+  <div class="hidden fixed inset-0 bg-black/40 z-50 items-center justify-center" id="regenModal">
+    <div class="bg-white rounded-xl w-full max-w-md mx-5 shadow-2xl">
+      <div class="px-6 py-5 border-b border-line flex justify-between items-center">
+        <h2 class="text-lg font-semibold m-0">Regenerate Slides</h2>
+        <button class="bg-transparent border-none text-2xl cursor-pointer text-stone-500 hover:text-ink leading-none" id="regenModalClose">&times;</button>
+      </div>
+      <div class="p-6">
+        <div class="text-sm text-stone-600 mb-4 p-2.5 bg-stone-100 rounded-md" id="changesSummary"></div>
+
+        <div class="mb-4 relative">
+          <a href="/token" class="absolute right-0 -top-5 text-xs text-accent hover:underline">Manage tokens</a>
+          <label for="tokenSelect" class="text-sm font-semibold text-stone-600 block mb-2">API Token</label>
+          <select id="tokenSelect" class="w-full px-3 py-2.5 border border-line rounded-lg text-sm bg-white">
+            <option value="">-- Select saved token --</option>
+          </select>
+          <input type="password" id="manualKeyInput" placeholder="sk-ant-..." class="w-full mt-2 px-3 py-2.5 border border-line rounded-lg text-sm bg-white hidden">
+        </div>
+
+        <p class="text-xs text-stone-500 mt-2">Your API token is needed to regenerate the audio.</p>
+      </div>
+      <div class="px-6 py-4 border-t border-line flex justify-end gap-3">
+        <button class="bg-transparent text-ink border border-line rounded-lg px-4 py-2.5 text-sm font-semibold cursor-pointer hover:bg-stone-100" id="regenCancelBtn">Cancel</button>
+        <button class="bg-accent text-white border-none rounded-lg px-4 py-2.5 text-sm font-semibold cursor-pointer hover:opacity-90" id="regenConfirmBtn">Regenerate</button>
+      </div>
+    </div>
+  </div>
+
+  <footer class="fixed bottom-4 right-6 text-xs text-stone-400">
+    &copy; <span id="year"></span> ianchen. All rights reserved.
+  </footer>
+  <script>document.getElementById('year').textContent = new Date().getFullYear();</script>
+
+  <script>
+    const barFill = document.getElementById('barFill');
+    const statusText = document.getElementById('statusText');
+    const errorText = document.getElementById('errorText');
+    const videoPlayer = document.getElementById('videoPlayer');
+    const downloadLink = document.getElementById('downloadLink');
+    const transcriptCol = document.getElementById('transcriptCol');
+    const transcriptPanel = document.getElementById('transcriptPanel');
+    const transcriptActions = document.getElementById('transcriptActions');
+    const editTranscriptBtn = document.getElementById('editTranscriptBtn');
+    const jobIdDisplay = document.getElementById('jobIdDisplay');
+    const contentDiv = document.getElementById('content');
+    const notFoundDiv = document.getElementById('notFound');
+
+    // Modal elements
+    const regenModal = document.getElementById('regenModal');
+    const regenModalClose = document.getElementById('regenModalClose');
+    const tokenSelect = document.getElementById('tokenSelect');
+    const manualKeyInput = document.getElementById('manualKeyInput');
+    const regenCancelBtn = document.getElementById('regenCancelBtn');
+    const regenConfirmBtn = document.getElementById('regenConfirmBtn');
+    const changesSummary = document.getElementById('changesSummary');
+
+    let pollTimer = null;
+    let transcriptItems = []; // {slide, text, originalText, start, duration, el}
+    let isEditMode = false;
+    let hasChanges = false;
+    let savedTokens = [];
+    let isProcessing = false;
+
+    // Extract job ID from URL path: /slide/{job_id}
+    const pathParts = window.location.pathname.split('/');
+    const jobId = pathParts[pathParts.length - 1] || pathParts[pathParts.length - 2];
+
+    if (!jobId || jobId === 'slide') {
+      showNotFound();
+    } else {
+      jobIdDisplay.textContent = jobId;
+      document.title = `Job ${jobId.slice(0, 8)}... - Slide Presenter`;
+      startPolling();
+    }
+
+    function showNotFound() {
+      contentDiv.classList.add('hidden');
+      notFoundDiv.classList.remove('hidden');
+    }
+
+    function startPolling() {
+      pollJob();
+      pollTimer = setInterval(pollJob, 1500);
+    }
+
+    // Load saved tokens
+    async function loadTokens() {
+      try {
+        const res = await fetch('/api/tokens');
+        savedTokens = await res.json();
+        updateTokenSelect();
+      } catch (err) {
+        console.error('Failed to load tokens:', err);
+      }
+    }
+
+    function updateTokenSelect() {
+      // Clear all options except the first placeholder
+      while (tokenSelect.options.length > 1) {
+        tokenSelect.remove(1);
+      }
+
+      // Add saved tokens
+      savedTokens.forEach(token => {
+        const option = document.createElement('option');
+        option.value = token.id;
+        option.textContent = `${token.name} (${token.token_masked})`;
+        tokenSelect.appendChild(option);
+      });
+
+      // Add "Enter manually..." option at the end
+      const manualOption = document.createElement('option');
+      manualOption.value = '__manual__';
+      manualOption.textContent = 'Enter manually...';
+      tokenSelect.appendChild(manualOption);
+    }
+
+    tokenSelect.addEventListener('change', () => {
+      if (tokenSelect.value === '__manual__') {
+        manualKeyInput.classList.remove('hidden');
+      } else {
+        manualKeyInput.classList.add('hidden');
+        manualKeyInput.value = '';
+      }
+    });
+
+    // Get API key (from saved token or manual input)
+    async function getApiKey() {
+      const selected = tokenSelect.value;
+
+      if (selected === '__manual__') {
+        return manualKeyInput.value.trim();
+      } else if (selected) {
+        // Fetch decrypted token
+        const res = await fetch(`/api/tokens/${selected}/decrypt`);
+        if (!res.ok) throw new Error('Failed to retrieve token');
+        const data = await res.json();
+        return data.token;
+      }
+
+      return '';
+    }
+
+    async function pollJob() {
+      try {
+        const res = await fetch(`/api/jobs/${jobId}`);
+        if (res.status === 404) {
+          clearInterval(pollTimer);
+          showNotFound();
+          return;
+        }
+        if (!res.ok) throw new Error('Job lookup failed');
+        const job = await res.json();
+
+        const pct = job.total_slides > 0
+          ? Math.round(10 + (job.current_slide / job.total_slides) * 85)
+          : 5;
+        barFill.style.width = pct + '%';
+        statusText.textContent = job.message || job.stage;
+
+        // Track processing state
+        isProcessing = (job.status === 'queued' || job.status === 'running');
+        updateUIState();
+        updateEditButtons();
+
+        if (job.status === 'done') {
+          clearInterval(pollTimer);
+          barFill.style.width = '100%';
+          statusText.textContent = 'Done!';
+          isProcessing = false;
+          updateUIState();
+
+          // Refresh video with cache buster
+          const cacheBuster = Date.now();
+          videoPlayer.src = `/api/jobs/${jobId}/video?t=${cacheBuster}`;
+          videoPlayer.classList.remove('hidden');
+          downloadLink.href = `/api/jobs/${jobId}/video`;
+          downloadLink.classList.remove('hidden');
+
+          // Exit edit mode and reload transcript
+          if (isEditMode) {
+            exitEditMode(false);
+          }
+          loadTranscript();
+        } else if (job.status === 'error') {
+          clearInterval(pollTimer);
+          isProcessing = false;
+          updateUIState();
+          updateEditButtons();
+          errorText.textContent = 'Error: ' + job.error;
+        }
+      } catch (err) {
+        clearInterval(pollTimer);
+        isProcessing = false;
+        updateUIState();
+        updateEditButtons();
+        errorText.textContent = 'Lost connection to job: ' + err.message;
+      }
+    }
+
+    async function loadTranscript() {
+      try {
+        const res = await fetch(`/api/jobs/${jobId}/transcript`);
+        if (!res.ok) return;
+        const slides = await res.json();
+
+        transcriptPanel.innerHTML = '';
+        transcriptItems = slides.map(slide => {
+          const item = document.createElement('div');
+          item.className = 'transcript-item px-3 py-2.5 rounded-md mb-0.5 text-sm leading-relaxed text-stone-600 cursor-pointer relative hover:bg-stone-100';
+          item.dataset.start = slide.start;
+
+          const num = document.createElement('span');
+          num.className = 'font-bold text-accent mr-1.5';
+          num.textContent = `#${slide.slide}`;
+
+          item.appendChild(num);
+          item.appendChild(document.createTextNode(slide.text));
+
+          item.addEventListener('click', () => {
+            if (!isEditMode) {
+              videoPlayer.currentTime = slide.start;
+              videoPlayer.play();
+            }
+          });
+
+          transcriptPanel.appendChild(item);
+          return {
+            slide: slide.slide,
+            text: slide.text,
+            originalText: slide.text,
+            start: slide.start,
+            duration: slide.duration,
+            el: item
+          };
+        });
+
+        transcriptCol.classList.remove('hidden');
+        hasChanges = false;
+        updateEditButtons();
+      } catch (err) {
+        // Non-fatal
+      }
+    }
+
+    function enterEditMode() {
+      isEditMode = true;
+      hasChanges = false;
+
+      transcriptItems.forEach(item => {
+        item.el.classList.add('editing', 'cursor-default');
+        const textNode = item.el.childNodes[1];
+        const currentText = textNode ? textNode.textContent : item.text;
+
+        const textarea = document.createElement('textarea');
+        textarea.className = 'w-full min-h-[60px] border border-line rounded p-2 text-sm leading-relaxed resize-y font-sans mt-1.5';
+        textarea.value = currentText.trim();
+        textarea.addEventListener('input', () => {
+          item.text = textarea.value;
+          checkForChanges();
+
+          const isChanged = item.text.trim() !== item.originalText.trim();
+          item.el.classList.toggle('changed', isChanged);
+        });
+        textarea.addEventListener('click', (e) => e.stopPropagation());
+
+        if (textNode) {
+          item.el.replaceChild(textarea, textNode);
+        } else {
+          item.el.appendChild(textarea);
+        }
+      });
+
+      updateEditButtons();
+    }
+
+    function exitEditMode(keepChanges = false) {
+      isEditMode = false;
+
+      transcriptItems.forEach(item => {
+        item.el.classList.remove('editing', 'cursor-default');
+        item.el.classList.remove('changed');
+        const textarea = item.el.querySelector('textarea');
+        if (textarea) {
+          if (!keepChanges) {
+            item.text = item.originalText;
+          }
+          const textNode = document.createTextNode(item.text);
+          item.el.replaceChild(textNode, textarea);
+        }
+      });
+
+      hasChanges = false;
+      updateEditButtons();
+    }
+
+    function checkForChanges() {
+      hasChanges = transcriptItems.some(item =>
+        item.text.trim() !== item.originalText.trim()
+      );
+      updateEditButtons();
+    }
+
+    function getChangedSlides() {
+      return transcriptItems.filter(item =>
+        item.text.trim() !== item.originalText.trim()
+      );
+    }
+
+    function updateUIState() {
+      // Freeze/unfreeze components based on processing state
+      videoPlayer.classList.toggle('disabled', isProcessing);
+      downloadLink.classList.toggle('disabled', isProcessing);
+      transcriptPanel.classList.toggle('disabled', isProcessing);
+
+      // Pause video if processing starts
+      if (isProcessing && !videoPlayer.paused) {
+        videoPlayer.pause();
+      }
+    }
+
+    function updateEditButtons() {
+      transcriptActions.innerHTML = '';
+
+      // Hide edit controls while processing
+      if (isProcessing) {
+        return;
+      }
+
+      if (!isEditMode) {
+        const editBtn = document.createElement('button');
+        editBtn.type = 'button';
+        editBtn.className = 'bg-transparent text-accent border border-accent px-3 py-1.5 text-xs rounded-md cursor-pointer hover:bg-accent hover:text-white';
+        editBtn.textContent = 'Edit transcript';
+        editBtn.addEventListener('click', enterEditMode);
+        transcriptActions.appendChild(editBtn);
+      } else {
+        const cancelBtn = document.createElement('button');
+        cancelBtn.type = 'button';
+        cancelBtn.className = 'bg-transparent text-stone-500 border border-line px-2.5 py-1.5 text-sm rounded-md cursor-pointer hover:bg-stone-100 hover:text-ink leading-none';
+        cancelBtn.innerHTML = '&times;';
+        cancelBtn.title = 'Cancel editing';
+        cancelBtn.addEventListener('click', () => exitEditMode(false));
+        transcriptActions.appendChild(cancelBtn);
+
+        if (hasChanges) {
+          const regenBtn = document.createElement('button');
+          regenBtn.type = 'button';
+          regenBtn.className = 'bg-emerald-500 text-white border-none px-3 py-1.5 text-xs rounded-md cursor-pointer font-semibold hover:opacity-90';
+          regenBtn.textContent = 'Regenerate';
+          regenBtn.addEventListener('click', openRegenModal);
+          transcriptActions.appendChild(regenBtn);
+        }
+      }
+    }
+
+    // Regeneration modal
+    async function openRegenModal() {
+      const changedSlides = getChangedSlides();
+      changesSummary.textContent = `${changedSlides.length} slide(s) will be regenerated: ${changedSlides.map(s => '#' + s.slide).join(', ')}`;
+      tokenSelect.value = '';
+      manualKeyInput.classList.add('hidden');
+      manualKeyInput.value = '';
+      await loadTokens();
+      regenModal.classList.remove('hidden');
+      regenModal.classList.add('flex');
+    }
+
+    function closeRegenModal() {
+      regenModal.classList.add('hidden');
+      regenModal.classList.remove('flex');
+    }
+
+    async function submitRegeneration() {
+      let apiKey;
+      try {
+        apiKey = await getApiKey();
+      } catch (err) {
+        alert('Failed to retrieve API key: ' + err.message);
+        return;
+      }
+
+      if (!apiKey) {
+        alert('Please select a token or enter an API key');
+        return;
+      }
+
+      const changedSlides = getChangedSlides();
+      if (changedSlides.length === 0) {
+        closeRegenModal();
+        return;
+      }
+
+      regenConfirmBtn.disabled = true;
+      regenConfirmBtn.textContent = 'Submitting...';
+
+      try {
+        const res = await fetch(`/api/jobs/${jobId}/regenerate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            api_key: apiKey,
+            changes: changedSlides.map(s => ({ slide: s.slide, text: s.text }))
+          })
+        });
+
+        if (!res.ok) {
+          const errText = await res.text();
+          throw new Error(errText);
+        }
+
+        closeRegenModal();
+
+        changedSlides.forEach(item => {
+          item.originalText = item.text;
+        });
+
+        // Update UI for processing state
+        isProcessing = true;
+        updateUIState();
+        updateEditButtons();
+
+        barFill.style.width = '10%';
+        statusText.textContent = 'Regenerating...';
+
+        startPolling();
+
+      } catch (err) {
+        alert('Regeneration failed: ' + err.message);
+      } finally {
+        regenConfirmBtn.disabled = false;
+        regenConfirmBtn.textContent = 'Regenerate';
+      }
+    }
+
+    regenModalClose.addEventListener('click', closeRegenModal);
+    regenCancelBtn.addEventListener('click', closeRegenModal);
+    regenConfirmBtn.addEventListener('click', submitRegeneration);
+    regenModal.addEventListener('click', (e) => {
+      if (e.target === regenModal) closeRegenModal();
+    });
+
+    // Video time sync
+    videoPlayer.addEventListener('timeupdate', () => {
+      if (!transcriptItems.length || isEditMode) return;
+      const t = videoPlayer.currentTime;
+
+      let activeIndex = 0;
+      for (let i = 0; i < transcriptItems.length; i++) {
+        if (transcriptItems[i].start <= t) activeIndex = i;
+        else break;
+      }
+
+      transcriptItems.forEach((item, i) => {
+        item.el.classList.toggle('active', i === activeIndex);
+      });
+
+      const activeEl = transcriptItems[activeIndex].el;
+      const panelTop = transcriptPanel.scrollTop;
+      const panelBottom = panelTop + transcriptPanel.clientHeight;
+      const itemTop = activeEl.offsetTop;
+      const itemBottom = itemTop + activeEl.offsetHeight;
+
+      if (itemTop < panelTop || itemBottom > panelBottom) {
+        const target = itemTop - (transcriptPanel.clientHeight / 2) + (activeEl.offsetHeight / 2);
+        transcriptPanel.scrollTo({ top: target, behavior: 'smooth' });
+      }
+    });
+
+    // Auth state
+    const loginBtn = document.getElementById('loginBtn');
+    const userMenu = document.getElementById('userMenu');
+    const userMenuBtn = document.getElementById('userMenuBtn');
+    const userDropdown = document.getElementById('userDropdown');
+    const userAvatar = document.getElementById('userAvatar');
+    const userName = document.getElementById('userName');
+    const userEmail = document.getElementById('userEmail');
+
+    async function checkAuth() {
+      try {
+        const res = await fetch('/api/auth/me');
+        const data = await res.json();
+
+        if (data.authenticated) {
+          loginBtn.classList.add('hidden');
+          userMenu.classList.remove('hidden');
+          userAvatar.src = data.user.picture || '';
+          userName.textContent = data.user.name || '';
+          userEmail.textContent = data.user.email || '';
+        } else {
+          loginBtn.classList.remove('hidden');
+          userMenu.classList.add('hidden');
+        }
+      } catch (err) {
+        console.error('Failed to check auth:', err);
+        loginBtn.classList.remove('hidden');
+      }
+    }
+
+    userMenuBtn?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      userDropdown.classList.toggle('hidden');
+    });
+
+    document.addEventListener('click', () => {
+      userDropdown?.classList.add('hidden');
+    });
+
+    checkAuth();
+  </script>
+</body>
+</html>

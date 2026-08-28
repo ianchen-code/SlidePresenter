@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Slides</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            accent: '#d97757',
+            bg: '#faf9f6',
+            ink: '#1f1c19',
+            line: '#e5e0d8',
+          }
+        }
+      }
+    }
+  </script>
+</head>
+<body class="font-sans bg-bg text-ink max-w-3xl mx-auto px-5 py-12 min-h-screen">
+  <header class="flex justify-between items-center mb-8">
+    <h1 class="text-2xl font-semibold">Slides</h1>
+    <div class="flex gap-3 items-center">
+      <a href="/token" class="text-accent font-semibold text-sm hover:underline">Manage Tokens</a>
+      <button class="bg-accent text-white border-none rounded-lg px-4 py-2.5 text-sm font-semibold cursor-pointer hover:opacity-90" id="newSlideBtn">+ New Slide</button>
+
+      <!-- Auth UI -->
+      <div id="authContainer" class="flex items-center gap-2 ml-2">
+        <a id="loginBtn" href="/login" class="hidden text-stone-600 font-semibold text-sm hover:text-accent">Sign in</a>
+        <div id="userMenu" class="hidden relative">
+          <button id="userMenuBtn" class="flex items-center gap-2 text-sm">
+            <img id="userAvatar" src="" alt="" class="w-8 h-8 rounded-full border border-line">
+            <span id="userName" class="hidden sm:inline text-stone-600 font-medium"></span>
+          </button>
+          <div id="userDropdown" class="hidden absolute right-0 mt-2 w-48 bg-white border border-line rounded-lg shadow-lg py-1 z-50">
+            <div class="px-4 py-2 border-b border-line">
+              <p id="userEmail" class="text-xs text-stone-500 truncate"></p>
+            </div>
+            <a href="/auth/logout" class="block px-4 py-2 text-sm text-stone-600 hover:bg-stone-50">Sign out</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <div id="slidesList" class="flex flex-col gap-3"></div>
+
+  <div id="emptyState" class="text-center py-16 text-stone-500 hidden">
+    <p class="mb-5">No slides yet. Create your first narrated video!</p>
+    <button class="bg-accent text-white border-none rounded-lg px-4 py-2.5 text-sm font-semibold cursor-pointer hover:opacity-90" id="newSlideBtnEmpty">+ New Slide</button>
+  </div>
+
+  <!-- New Slide Modal -->
+  <div class="hidden fixed inset-0 bg-black/40 z-50 items-center justify-center" id="modalOverlay">
+    <div class="bg-white rounded-xl w-full max-w-md mx-5 shadow-2xl">
+      <div class="px-6 py-5 border-b border-line flex justify-between items-center">
+        <h2 class="text-lg font-semibold m-0">New Slide</h2>
+        <button class="bg-transparent border-none text-2xl cursor-pointer text-stone-500 hover:text-ink leading-none" id="modalClose">&times;</button>
+      </div>
+      <div class="p-6">
+        <form id="jobForm" class="flex flex-col gap-4">
+          <div>
+            <label for="file" class="text-sm font-semibold text-stone-600 block mb-2">Slide file (.pdf or .pptx)</label>
+            <input type="file" id="file" name="file" accept=".pdf,.pptx" required class="w-full px-3 py-2.5 border border-line rounded-lg text-sm bg-white">
+          </div>
+          <div class="relative">
+            <a href="/token" class="absolute right-0 -top-5 text-xs text-accent hover:underline">Manage tokens</a>
+            <label for="tokenSelect" class="text-sm font-semibold text-stone-600 block mb-2">API Token</label>
+            <select id="tokenSelect" class="w-full px-3 py-2.5 border border-line rounded-lg text-sm bg-white">
+              <option value="">-- Select saved token --</option>
+            </select>
+            <input type="password" id="manualKeyInput" placeholder="sk-ant-..." class="w-full mt-2 px-3 py-2.5 border border-line rounded-lg text-sm bg-white hidden">
+            <input type="hidden" id="apiKey" name="api_key">
+          </div>
+          <div>
+            <label for="model" class="text-sm font-semibold text-stone-600 block mb-2">AI Model</label>
+            <select id="model" name="model" class="w-full px-3 py-2.5 border border-line rounded-lg text-sm bg-white">
+              <option value="claude-sonnet-4-5">Claude Sonnet 4.5</option>
+              <option value="claude-3-opus">Claude 3 Opus</option>
+              <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+            </select>
+          </div>
+          <div>
+            <label for="voice" class="text-sm font-semibold text-stone-600 block mb-2">Narration voice</label>
+            <select id="voice" name="voice" class="w-full px-3 py-2.5 border border-line rounded-lg text-sm bg-white">
+              <option value="en-US-ChristopherNeural">Christopher (US, male)</option>
+              <option value="en-US-JennyNeural">Jenny (US, female)</option>
+              <option value="en-GB-RyanNeural">Ryan (UK, male)</option>
+              <option value="zh-TW-YunJheNeural">Yun-Jhe (Taiwan Mandarin, male)</option>
+              <option value="zh-TW-HsiaoChenNeural">Hsiao-Chen (Taiwan Mandarin, female)</option>
+            </select>
+          </div>
+          <div id="uploadStatus" class="hidden mt-4">
+            <div class="bg-line rounded-md h-2 overflow-hidden">
+              <div class="bg-accent h-full w-0 transition-all duration-300" id="barFill"></div>
+            </div>
+            <div id="statusText" class="text-sm text-stone-600 mt-1.5"></div>
+            <div id="errorText" class="text-red-600 text-sm mt-1.5"></div>
+          </div>
+        </form>
+      </div>
+      <div class="px-6 py-4 border-t border-line flex justify-end gap-3">
+        <button class="bg-transparent text-ink border border-line rounded-lg px-4 py-2.5 text-sm font-semibold cursor-pointer hover:bg-stone-100" id="cancelBtn" type="button">Cancel</button>
+        <button class="bg-accent text-white border-none rounded-lg px-4 py-2.5 text-sm font-semibold cursor-pointer hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed" id="submitBtn" type="submit" form="jobForm">Generate Video</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Delete Confirmation Modal -->
+  <div class="hidden fixed inset-0 bg-black/40 z-50 items-center justify-center" id="deleteModal">
+    <div class="bg-white rounded-xl w-full max-w-sm mx-5 shadow-2xl">
+      <div class="px-6 py-5 border-b border-line flex justify-between items-center">
+        <h2 class="text-lg font-semibold m-0">Delete Slide</h2>
+        <button class="bg-transparent border-none text-2xl cursor-pointer text-stone-500 hover:text-ink leading-none" id="deleteModalClose">&times;</button>
+      </div>
+      <div class="p-6">
+        <p class="text-stone-600">Are you sure you want to delete "<strong id="deleteSlideTitle"></strong>"? This action cannot be undone.</p>
+      </div>
+      <div class="px-6 py-4 border-t border-line flex justify-end gap-3">
+        <button class="bg-transparent text-ink border border-line rounded-lg px-4 py-2.5 text-sm font-semibold cursor-pointer hover:bg-stone-100" id="deleteCancelBtn">Cancel</button>
+        <button class="bg-red-500 text-white border-none rounded-lg px-4 py-2.5 text-sm font-semibold cursor-pointer hover:opacity-90 disabled:opacity-50" id="deleteConfirmBtn">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <footer class="fixed bottom-4 right-6 text-xs text-stone-400">
+    &copy; <span id="year"></span> ianchen. All rights reserved.
+  </footer>
+  <script>document.getElementById('year').textContent = new Date().getFullYear();</script>
+
+  <script>
+    const slidesList = document.getElementById('slidesList');
+    const emptyState = document.getElementById('emptyState');
+    const modalOverlay = document.getElementById('modalOverlay');
+    const newSlideBtn = document.getElementById('newSlideBtn');
+    const newSlideBtnEmpty = document.getElementById('newSlideBtnEmpty');
+    const modalClose = document.getElementById('modalClose');
+    const cancelBtn = document.getElementById('cancelBtn');
+    const form = document.getElementById('jobForm');
+    const submitBtn = document.getElementById('submitBtn');
+    const uploadStatus = document.getElementById('uploadStatus');
+    const barFill = document.getElementById('barFill');
+    const statusText = document.getElementById('statusText');
+    const errorText = document.getElementById('errorText');
+    const tokenSelect = document.getElementById('tokenSelect');
+    const manualKeyInput = document.getElementById('manualKeyInput');
+    const apiKeyInput = document.getElementById('apiKey');
+
+    let savedTokens = [];
+
+    // Load saved tokens
+    async function loadTokens() {
+      try {
+        const res = await fetch('/api/tokens');
+        savedTokens = await res.json();
+        updateTokenSelect();
+      } catch (err) {
+        console.error('Failed to load tokens:', err);
+      }
+    }
+
+    function updateTokenSelect() {
+      // Clear all options except the first placeholder
+      while (tokenSelect.options.length > 1) {
+        tokenSelect.remove(1);
+      }
+
+      // Add saved tokens
+      savedTokens.forEach(token => {
+        const option = document.createElement('option');
+        option.value = token.id;
+        option.textContent = `${token.name} (${token.token_masked})`;
+        tokenSelect.appendChild(option);
+      });
+
+      // Add "Enter manually..." option at the end
+      const manualOption = document.createElement('option');
+      manualOption.value = '__manual__';
+      manualOption.textContent = 'Enter manually...';
+      tokenSelect.appendChild(manualOption);
+    }
+
+    tokenSelect.addEventListener('change', () => {
+      if (tokenSelect.value === '__manual__') {
+        manualKeyInput.classList.remove('hidden');
+      } else {
+        manualKeyInput.classList.add('hidden');
+        manualKeyInput.value = '';
+      }
+    });
+
+    // Modal controls
+    async function openModal() {
+      modalOverlay.classList.remove('hidden');
+      modalOverlay.classList.add('flex');
+      form.reset();
+      tokenSelect.value = '';
+      manualKeyInput.classList.add('hidden');
+      uploadStatus.classList.add('hidden');
+      errorText.textContent = '';
+      submitBtn.disabled = false;
+      await loadTokens();
+    }
+
+    function closeModal() {
+      modalOverlay.classList.add('hidden');
+      modalOverlay.classList.remove('flex');
+    }
+
+    newSlideBtn.addEventListener('click', openModal);
+    newSlideBtnEmpty.addEventListener('click', openModal);
+    modalClose.addEventListener('click', closeModal);
+    cancelBtn.addEventListener('click', closeModal);
+    modalOverlay.addEventListener('click', (e) => {
+      if (e.target === modalOverlay) closeModal();
+    });
+
+    // Load slides
+    async function loadSlides() {
+      try {
+        const res = await fetch('/api/jobs');
+        const jobs = await res.json();
+
+        if (jobs.length === 0) {
+          slidesList.classList.add('hidden');
+          emptyState.classList.remove('hidden');
+          return;
+        }
+
+        slidesList.classList.remove('hidden');
+        emptyState.classList.add('hidden');
+
+        slidesList.innerHTML = jobs.map(job => {
+          const date = new Date(job.created_at);
+          const dateStr = date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+          const statusClasses = {
+            'queued': 'bg-amber-100 text-amber-800',
+            'running': 'bg-amber-100 text-amber-800',
+            'done': 'bg-emerald-100 text-emerald-800',
+            'error': 'bg-red-100 text-red-800'
+          };
+          return `
+            <div class="bg-white border border-line rounded-xl px-5 py-4 flex justify-between items-center transition-all hover:border-accent hover:shadow-md group">
+              <a href="/slide/${job.id}" class="flex-1 min-w-0 no-underline text-inherit">
+                <div class="font-semibold text-base mb-1 whitespace-nowrap overflow-hidden text-ellipsis">${escapeHtml(job.filename || 'Untitled')}</div>
+                <div class="text-sm text-stone-500">${dateStr}</div>
+              </a>
+              <div class="flex items-center gap-3">
+                <span class="px-2.5 py-1 rounded-full text-xs font-semibold capitalize ${statusClasses[job.status] || ''}">${job.status}</span>
+                <button onclick="event.stopPropagation(); deleteSlide('${job.id}', '${escapeHtml(job.filename || 'Untitled').replace(/'/g, "\\'")}')"
+                  class="opacity-0 group-hover:opacity-100 p-1.5 text-stone-400 hover:text-red-500 hover:bg-red-50 rounded transition-all" title="Delete">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          `;
+        }).join('');
+
+        // Re-attach event listeners after rendering
+        document.querySelectorAll('[data-delete-id]').forEach(btn => {
+          btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          });
+        });
+      } catch (err) {
+        console.error('Failed to load slides:', err);
+      }
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // Get API key (from saved token or manual input)
+    async function getApiKey() {
+      const selected = tokenSelect.value;
+
+      if (selected === '__manual__') {
+        return manualKeyInput.value.trim();
+      } else if (selected) {
+        // Fetch decrypted token
+        const res = await fetch(`/api/tokens/${selected}/decrypt`);
+        if (!res.ok) throw new Error('Failed to retrieve token');
+        const data = await res.json();
+        return data.token;
+      }
+
+      return '';
+    }
+
+    // Form submission
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      // Get API key
+      let apiKey;
+      try {
+        apiKey = await getApiKey();
+      } catch (err) {
+        errorText.textContent = 'Failed to retrieve API key: ' + err.message;
+        return;
+      }
+
+      if (!apiKey) {
+        errorText.textContent = 'Please select a token or enter an API key';
+        return;
+      }
+
+      submitBtn.disabled = true;
+      uploadStatus.classList.remove('hidden');
+      errorText.textContent = '';
+      barFill.style.width = '2%';
+      statusText.textContent = 'Uploading...';
+
+      // Set the API key in the hidden input
+      apiKeyInput.value = apiKey;
+
+      const fd = new FormData(form);
+      try {
+        const res = await fetch('/api/jobs', { method: 'POST', body: fd });
+        if (!res.ok) throw new Error(await res.text());
+        const { job_id } = await res.json();
+        barFill.style.width = '100%';
+        statusText.textContent = 'Redirecting...';
+        window.location.href = `/slide/${job_id}`;
+      } catch (err) {
+        errorText.textContent = 'Upload failed: ' + err.message;
+        submitBtn.disabled = false;
+      }
+    });
+
+    // Delete modal
+    const deleteModal = document.getElementById('deleteModal');
+    const deleteModalClose = document.getElementById('deleteModalClose');
+    const deleteSlideTitle = document.getElementById('deleteSlideTitle');
+    const deleteCancelBtn = document.getElementById('deleteCancelBtn');
+    const deleteConfirmBtn = document.getElementById('deleteConfirmBtn');
+    let deletingSlideId = null;
+
+    function deleteSlide(id, title) {
+      deletingSlideId = id;
+      deleteSlideTitle.textContent = title;
+      deleteModal.classList.remove('hidden');
+      deleteModal.classList.add('flex');
+    }
+
+    function closeDeleteModal() {
+      deleteModal.classList.add('hidden');
+      deleteModal.classList.remove('flex');
+      deletingSlideId = null;
+    }
+
+    async function confirmDelete() {
+      if (!deletingSlideId) return;
+
+      deleteConfirmBtn.disabled = true;
+      deleteConfirmBtn.textContent = 'Deleting...';
+
+      try {
+        const res = await fetch(`/api/jobs/${deletingSlideId}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error(await res.text());
+        closeDeleteModal();
+        loadSlides();
+      } catch (err) {
+        alert('Failed to delete: ' + err.message);
+      } finally {
+        deleteConfirmBtn.disabled = false;
+        deleteConfirmBtn.textContent = 'Delete';
+      }
+    }
+
+    deleteModalClose.addEventListener('click', closeDeleteModal);
+    deleteCancelBtn.addEventListener('click', closeDeleteModal);
+    deleteConfirmBtn.addEventListener('click', confirmDelete);
+    deleteModal.addEventListener('click', (e) => {
+      if (e.target === deleteModal) closeDeleteModal();
+    });
+
+    // Auth state
+    const loginBtn = document.getElementById('loginBtn');
+    const userMenu = document.getElementById('userMenu');
+    const userMenuBtn = document.getElementById('userMenuBtn');
+    const userDropdown = document.getElementById('userDropdown');
+    const userAvatar = document.getElementById('userAvatar');
+    const userName = document.getElementById('userName');
+    const userEmail = document.getElementById('userEmail');
+
+    async function checkAuth() {
+      try {
+        const res = await fetch('/api/auth/me');
+        const data = await res.json();
+
+        if (data.authenticated) {
+          loginBtn.classList.add('hidden');
+          userMenu.classList.remove('hidden');
+          userAvatar.src = data.user.picture || '';
+          userName.textContent = data.user.name || '';
+          userEmail.textContent = data.user.email || '';
+        } else {
+          loginBtn.classList.remove('hidden');
+          userMenu.classList.add('hidden');
+        }
+      } catch (err) {
+        console.error('Failed to check auth:', err);
+        loginBtn.classList.remove('hidden');
+      }
+    }
+
+    userMenuBtn?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      userDropdown.classList.toggle('hidden');
+    });
+
+    document.addEventListener('click', () => {
+      userDropdown?.classList.add('hidden');
+    });
+
+    // Initial load
+    loadSlides();
+    loadTokens();
+    checkAuth();
+
+    // Refresh list periodically to update statuses
+    setInterval(loadSlides, 5000);
+  </script>
+</body>
+</html>

@@ -1,0 +1,32 @@
+[
+  {
+    "slide": 1,
+    "text": "Welcome everyone to the August 16th EEG Meeting. My name is Ruby Kitten, and I'll be your presenter today.",
+    "start": 0.0,
+    "duration": 7.92
+  },
+  {
+    "slide": 2,
+    "text": "So let me walk you through the progress we've made over the last two weeks.\n\nFirst, we did a deep dive into the FastICA and t-SNE papers\n\nSecond, we've been working on IC clustering from the ICA encoder pipeline\n\nThird, we found that when we replace the encoder with a full MLP architecture, we're actually getting competitive results, which is quite promising.\n\nFourth, we're trying a different approach using EEGNet to encode components cross time EEG data, so essentially treating it as a spatiotemporal encoding problem.\n\nAnd finally, we've been investigating the memorization problem that we've been seeing with the encoder, trying to understand what's causing it and how we can address it.",
+    "start": 7.92,
+    "duration": 43.25
+  },
+  {
+    "slide": 3,
+    "text": "Let me walk you through our experimental protocol. The timeline shows the sequence of events during each trial.\n\nWe start with a fixation cross displayed for one thousand milliseconds. This is where we send trigger 11 for trials with the correct equation, and trigger 10 for trials with the incorrect equation.\n\nNext, we present the first stimulus, S1, which shows a parabola for two thousand milliseconds. \n\nThis is followed by an inter-stimulus interval, or ISI, of one thousand milliseconds.\n\nThen we present the second stimulus, S2 - highlighted here in blue - which displays an equation like \"y equals x squared\" for five thousand milliseconds. This is our fixed 2-second EEG length window. During this period, we send triggers 61 through 120, which correspond to the different questions being presented.\n\nFinally, we have another ISI of one thousand milliseconds. At the end of this interval, we record the participant's response with trigger 201 if they answered correctly, or trigger 200 if they answered incorrectly.",
+    "start": 51.17,
+    "duration": 68.45
+  },
+  {
+    "slide": 4,
+    "text": "Let me walk you through our preprocessing pipeline. First, we apply a notch filter at 60 Hertz to remove line noise. Second, we bandpass filter the data between 0.1 and 40 Hertz. Third, we average reference the signals. Fourth, we use ICA to remove ocular artifacts. Fifth, we extract epochs from negative 0.2 to 2.0 seconds, with a baseline correction applied from negative 0.2 to 0 seconds. Sixth, we set a rejection threshold of 150 microvolts peak-to-peak, and automatically drop any epoch exceeding this threshold. Note that the number of epochs will vary across subjects. Seventh, each surviving epoch is tagged as either 1 for correct trials, which is code 201, or 0 for incorrect trials, which is code 200. Finally, the data is resampled to 128 Hertz after epoching.\n\nFor validation, we use GroupKFold-by-subject cross-validation. With approximately 256 subjects and 5 splits, each fold holds out roughly one-fifth of the subjects—that's about 51 subjects—as the test set, and trains on the rest.",
+    "start": 119.62,
+    "duration": 78.26
+  },
+  {
+    "slide": 5,
+    "text": "Looking at EEG data dimension, we can compare two different approaches: analyzing the data in Channel by Time format versus Component by Time format.\n\nOn the left side, we have the Channel by Time representations using two different encoder architectures - EEGNet on top and MLP on the bottom. Both show subject-level pooled feature t-SNE plots using a single shared model trained in-sample, where the dot size represents prediction error.\n\nOn the right side, we see the same two architectures applied to Component by Time data. What's interesting here is how the data structure differs between these two dimensional approaches.\n\nThe color scale across all plots represents time, ranging from about 10 to 50 time points, shown in this gradient from dark blue to yellow. You can see temporal patterns in how the points cluster - notice particularly in the bottom right Component by Time MLP plot how there's a clear separation with the yellow points, representing later time points, clustering in the upper left, while the darker blue points from earlier time periods cluster in the lower right.\n\nThis visualization helps us understand how different data representations and model architectures organize the EEG features in lower-dimensional space, with prediction error indicated by the varying dot sizes.",
+    "start": 197.88,
+    "duration": 78.12
+  }
+]

@@ -1,0 +1,11 @@
+So let me walk you through the progress we've made over the last two weeks.
+
+First, we conducted a thorough review of the FastICA and t-SNE papers, going through them line by line and working through all the mathematical derivations to really understand the foundational theory.
+
+Second, we worked on IC clustering from the ICA encoder pipeline, specifically checking how well the ICA alignment performs on regression tasks.
+
+Third, we found that replacing the encoder with a full MLP architecture actually shows competitive results, which is quite promising.
+
+Fourth, we've been trying to use EEGNet to encode components crossed with time EEG data to see if that improves our approach.
+
+And finally, we've been investigating the memorization problem of the encoder, which is an important issue we need to address moving forward.
