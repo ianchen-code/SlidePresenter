@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Slide Presentation</title>
+  <title>Slide Presenter</title>
   <link rel="stylesheet" href="/transitions.css">
   <script src="/ui-transitions.js"></script>
   <script src="/toast.js"></script>
@@ -13,7 +13,7 @@
       theme: {
         extend: {
           colors: {
-            accent: '#d97757',
+            accent: '#b35d3f',
             bg: '#faf9f6',
             ink: '#1f1c19',
             line: '#e5e0d8',
@@ -25,7 +25,7 @@
   <style>
     /* Custom styles that are difficult to express with Tailwind utilities */
     .transcript-item.active { background: #fdece4; color: #1f1c19; }
-    .transcript-item.changed { border-left: 3px solid #d97757; }
+    .transcript-item.changed { border-left: 3px solid #b35d3f; }
     .transcript-item.editing:hover { background: transparent; }
     video.disabled { pointer-events: none; opacity: 0.5; }
     a.disabled { pointer-events: none; opacity: 0.5; }
@@ -44,7 +44,7 @@
     <div id="authContainer" class="flex items-center gap-2">
       <a id="loginBtn" href="/login" class="hidden text-stone-600 font-semibold text-sm hover:text-accent">Sign in</a>
       <div id="userMenu" class="hidden relative">
-        <button id="userMenuBtn" class="flex items-center gap-2 text-sm">
+        <button id="userMenuBtn" type="button" class="flex items-center gap-2 text-sm" aria-label="User menu" aria-haspopup="true">
           <img id="userAvatar" src="" alt="" class="w-8 h-8 rounded-full border border-line">
         </button>
         <div id="userDropdown" class="hidden absolute right-0 mt-2 w-56 bg-white border border-line rounded-lg shadow-lg py-1 z-50 transition-all duration-150 origin-top-right opacity-0 scale-95">
@@ -64,26 +64,25 @@
     <div class="flex gap-8 items-start max-md:flex-col">
       <div class="flex-1 min-w-0">
         <div class="flex items-center gap-2 mb-1">
-          <h1 id="jobTitle" class="text-2xl font-semibold m-0">Slide Presentation</h1>
-          <button type="button" id="editDetailsBtn" class="hidden text-stone-400 hover:text-accent p-1 flex-shrink-0" title="Edit name & description">
-            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+          <h1 id="jobTitle" class="text-2xl font-semibold m-0">Loading&hellip;</h1>
+          <button type="button" id="editDetailsBtn" class="hidden text-stone-400 hover:text-accent p-1 flex-shrink-0" aria-label="Edit name and description">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" />
+              <path d="m15 5 4 4" />
             </svg>
           </button>
         </div>
         <p id="jobDescription" class="hidden text-stone-500 text-sm mt-0 mb-2"></p>
-        <p class="text-stone-500 mt-0 mb-8">Job ID: <span class="font-mono text-sm text-stone-500 break-all" id="jobIdDisplay"></span></p>
 
-        <div id="status">
-          <div class="bg-line rounded-md h-2.5 overflow-hidden">
-            <div class="bg-accent h-full w-0 transition-all duration-300" id="barFill"></div>
+        <div id="videoSection" class="relative mt-6 rounded-lg overflow-hidden bg-stone-100 aspect-video">
+          <div id="processingOverlay" class="absolute inset-0 flex flex-col items-center justify-center gap-4 px-6 text-center">
+            <div class="w-8 h-8 rounded-full border-4 border-stone-300 border-t-accent animate-spin" role="status" aria-label="Generating video"></div>
+            <div id="statusText" class="text-sm text-stone-600 font-medium">Loading...</div>
           </div>
-          <div id="statusText" class="text-sm text-stone-600 mt-2">Loading...</div>
-          <div id="errorText" class="text-red-600 text-sm mt-2"></div>
-          <video id="videoPlayer" controls class="w-full mt-5 rounded-lg hidden"></video>
-          <br>
-          <a class="inline-block mt-3 text-accent font-semibold no-underline hover:underline hidden" id="downloadLink" download="presentation.mp4">Download video</a>
+          <video id="videoPlayer" controls class="hidden w-full h-full"></video>
         </div>
+        <div id="errorText" class="text-red-600 text-sm mt-3" role="alert"></div>
+        <a class="inline-block mt-3 text-accent font-semibold no-underline hover:underline hidden" id="downloadLink" download="presentation.mp4">Download video</a>
       </div>
 
       <div class="flex-1 min-w-[280px] max-w-[400px] hidden sticky top-8 max-md:static max-md:max-w-none max-md:w-full" id="transcriptCol">
@@ -105,11 +104,11 @@
   </div>
 
   <!-- Regeneration Modal -->
-  <div class="hidden fixed inset-0 bg-black/40 z-50 items-center justify-center transition-opacity duration-200 opacity-0" id="regenModal">
+  <div class="hidden fixed inset-0 bg-black/40 z-50 items-center justify-center transition-opacity duration-200 opacity-0" id="regenModal" role="dialog" aria-modal="true" aria-labelledby="regenModalTitle">
     <div class="bg-white rounded-xl w-full max-w-md mx-5 shadow-2xl transition-all duration-200 scale-95 opacity-0">
       <div class="px-6 py-5 border-b border-line flex justify-between items-center">
-        <h2 class="text-lg font-semibold m-0">Regenerate Slides</h2>
-        <button class="bg-transparent border-none text-2xl cursor-pointer text-stone-500 hover:text-ink leading-none" id="regenModalClose">&times;</button>
+        <h2 id="regenModalTitle" class="text-lg font-semibold m-0">Regenerate Slides</h2>
+        <button type="button" class="bg-transparent border-none cursor-pointer text-stone-500 hover:text-ink p-1 -m-1 rounded" id="regenModalClose" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
       </div>
       <div class="p-6">
         <div class="text-sm text-stone-600 mb-4 p-2.5 bg-stone-100 rounded-md" id="changesSummary"></div>
@@ -124,11 +123,11 @@
   </div>
 
   <!-- Edit Details Modal -->
-  <div class="hidden fixed inset-0 bg-black/40 z-50 items-center justify-center transition-opacity duration-200 opacity-0" id="detailsModal">
+  <div class="hidden fixed inset-0 bg-black/40 z-50 items-center justify-center transition-opacity duration-200 opacity-0" id="detailsModal" role="dialog" aria-modal="true" aria-labelledby="detailsModalTitle">
     <div class="bg-white rounded-xl w-full max-w-md mx-5 shadow-2xl transition-all duration-200 scale-95 opacity-0">
       <div class="px-6 py-5 border-b border-line flex justify-between items-center">
-        <h2 class="text-lg font-semibold m-0">Edit Details</h2>
-        <button class="bg-transparent border-none text-2xl cursor-pointer text-stone-500 hover:text-ink leading-none" id="detailsModalClose">&times;</button>
+        <h2 id="detailsModalTitle" class="text-lg font-semibold m-0">Edit Details</h2>
+        <button type="button" class="bg-transparent border-none cursor-pointer text-stone-500 hover:text-ink p-1 -m-1 rounded" id="detailsModalClose" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
       </div>
       <div class="p-6 flex flex-col gap-4">
         <div>
@@ -139,11 +138,9 @@
           <div class="flex justify-between items-center mb-2">
             <label for="descriptionInput" class="text-sm font-semibold text-stone-600">Description <span class="text-stone-400 font-normal">(optional)</span></label>
             <div class="relative flex-shrink-0">
-              <button type="button" id="autoFillBtn" class="flex items-center gap-1 text-xs text-accent hover:underline font-semibold" title="AI writing tools">
-                <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M12 2l1.9 5.1L19 9l-5.1 1.9L12 16l-1.9-5.1L5 9l5.1-1.9L12 2z" />
-                  <path d="M19 14l.7 1.9L21.6 16.6 19.9 17.3 19 19l-.9-1.7-1.7-.7 1.7-.7L19 14z" />
-                  <path d="M5 14l.7 1.9L7.6 16.6 5.9 17.3 5 19l-.9-1.7L2.4 16.6l1.9-.7L5 14z" />
+              <button type="button" id="autoFillBtn" class="flex items-center gap-1 text-xs text-accent hover:underline font-semibold">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z" />
                 </svg>
                 <span id="autoFillBtnLabel">AI write</span>
               </button>
@@ -160,11 +157,11 @@
   </div>
 
   <!-- Share Modal -->
-  <div class="hidden fixed inset-0 bg-black/40 z-50 items-center justify-center transition-opacity duration-200 opacity-0" id="shareModal">
+  <div class="hidden fixed inset-0 bg-black/40 z-50 items-center justify-center transition-opacity duration-200 opacity-0" id="shareModal" role="dialog" aria-modal="true" aria-labelledby="shareModalTitle">
     <div class="bg-white rounded-xl w-full max-w-md mx-5 shadow-2xl transition-all duration-200 scale-95 opacity-0">
       <div class="px-6 py-5 border-b border-line flex justify-between items-center">
-        <h2 class="text-lg font-semibold m-0">Share this presentation</h2>
-        <button class="bg-transparent border-none text-2xl cursor-pointer text-stone-500 hover:text-ink leading-none" id="shareModalClose">&times;</button>
+        <h2 id="shareModalTitle" class="text-lg font-semibold m-0">Share this presentation</h2>
+        <button type="button" class="bg-transparent border-none cursor-pointer text-stone-500 hover:text-ink p-1 -m-1 rounded" id="shareModalClose" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
       </div>
       <div class="p-6 flex flex-col gap-4">
         <label class="flex items-center justify-between cursor-pointer">
@@ -198,7 +195,8 @@
   <script>document.getElementById('year').textContent = new Date().getFullYear();</script>
 
   <script>
-    const barFill = document.getElementById('barFill');
+    const videoSection = document.getElementById('videoSection');
+    const processingOverlay = document.getElementById('processingOverlay');
     const statusText = document.getElementById('statusText');
     const errorText = document.getElementById('errorText');
     const videoPlayer = document.getElementById('videoPlayer');
@@ -207,7 +205,6 @@
     const transcriptPanel = document.getElementById('transcriptPanel');
     const transcriptActions = document.getElementById('transcriptActions');
     const editTranscriptBtn = document.getElementById('editTranscriptBtn');
-    const jobIdDisplay = document.getElementById('jobIdDisplay');
     const contentDiv = document.getElementById('content');
     const notFoundDiv = document.getElementById('notFound');
     const jobTitleEl = document.getElementById('jobTitle');
@@ -267,7 +264,6 @@
     if (!jobId || jobId === 'slide') {
       showNotFound();
     } else {
-      jobIdDisplay.textContent = jobId;
       document.title = `Job ${jobId.slice(0, 8)}... - Slide Presenter`;
       startPolling();
     }
@@ -403,10 +399,6 @@
         const job = await res.json();
         applyJobMeta(job);
 
-        const pct = job.total_slides > 0
-          ? Math.round(10 + (job.current_slide / job.total_slides) * 85)
-          : 5;
-        barFill.style.width = pct + '%';
         statusText.textContent = job.message || job.stage;
 
         // Track processing state
@@ -416,7 +408,6 @@
 
         if (job.status === 'done') {
           clearInterval(pollTimer);
-          barFill.style.width = '100%';
           statusText.textContent = 'Done!';
           isProcessing = false;
           updateUIState();
@@ -568,10 +559,8 @@
         sparkBtn.type = 'button';
         sparkBtn.title = 'AI writing tools';
         sparkBtn.className = 'flex items-center gap-1 text-xs text-accent hover:underline font-semibold px-1 py-0.5';
-        sparkBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
-          <path d="M12 2l1.9 5.1L19 9l-5.1 1.9L12 16l-1.9-5.1L5 9l5.1-1.9L12 2z" />
-          <path d="M19 14l.7 1.9L21.6 16.6 19.9 17.3 19 19l-.9-1.7-1.7-.7 1.7-.7L19 14z" />
-          <path d="M5 14l.7 1.9L7.6 16.6 5.9 17.3 5 19l-.9-1.7L2.4 16.6l1.9-.7L5 14z" />
+        sparkBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z" />
         </svg> AI write`;
         sparkBtn.addEventListener('click', (e) => e.stopPropagation());
         toolbar.appendChild(sparkBtn);
@@ -621,6 +610,9 @@
     }
 
     function updateUIState() {
+      // Full-section overlay covers the video area while generating/regenerating.
+      processingOverlay.classList.toggle('hidden', !isProcessing);
+
       // Freeze/unfreeze components based on processing state
       videoPlayer.classList.toggle('disabled', isProcessing);
       downloadLink.classList.toggle('disabled', isProcessing);
@@ -651,9 +643,9 @@
       } else {
         const cancelBtn = document.createElement('button');
         cancelBtn.type = 'button';
-        cancelBtn.className = 'bg-transparent text-stone-500 border border-line px-2.5 py-1.5 text-sm rounded-md cursor-pointer hover:bg-stone-100 hover:text-ink leading-none';
-        cancelBtn.innerHTML = '&times;';
-        cancelBtn.title = 'Cancel editing';
+        cancelBtn.className = 'bg-transparent text-stone-500 border border-line p-1.5 rounded-md cursor-pointer hover:bg-stone-100 hover:text-ink flex items-center';
+        cancelBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
+        cancelBtn.setAttribute('aria-label', 'Cancel editing');
         cancelBtn.addEventListener('click', () => exitEditMode(false));
         transcriptActions.appendChild(cancelBtn);
 
@@ -728,7 +720,6 @@
         updateUIState();
         updateEditButtons();
 
-        barFill.style.width = '10%';
         statusText.textContent = 'Regenerating...';
 
         startPolling();

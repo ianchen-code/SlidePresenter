@@ -250,6 +250,18 @@ try:
 except Exception as e:
     print(f"Warning: Could not initialize database: {e}")
 
+def iso_utc(dt) -> Optional[str]:
+    """Serialize a DB timestamp as ISO-8601 with an explicit UTC marker.
+    Postgres session timezone is UTC (see init_db), but these columns are
+    TIMESTAMP WITHOUT TIME ZONE, so psycopg hands back naive datetimes.
+    isoformat() on a naive datetime has no offset, and browsers interpret
+    that as *local* time (new Date('...')), silently shifting every
+    timestamp shown in the UI by the viewer's UTC offset. Appending 'Z'
+    tells the browser it's UTC so it converts to local time correctly."""
+    if not dt:
+        return None
+    return dt.isoformat() + "Z"
+
 def hash_api_key(api_key: str) -> str:
     """Hash the API key using SHA-256."""
     return hashlib.sha256(api_key.encode()).hexdigest()
@@ -273,7 +285,7 @@ def job_row_to_dict(row: dict) -> dict:
         "filename": row["filename"],
         "title": row.get("title"),
         "description": row.get("description"),
-        "created_at": row["created_at"].isoformat() if row["created_at"] else None,
+        "created_at": iso_utc(row["created_at"]),
         "status": row["status"],
         "stage": row["stage"],
         "current_slide": row["current_slide"],
@@ -378,7 +390,7 @@ def create_job_record(
         "id": job_id,
         "user_id": user_id,
         "filename": filename,
-        "created_at": result["created_at"].isoformat() if result else None,
+        "created_at": iso_utc(result["created_at"]) if result else None,
         "status": "queued",
         "stage": "queued",
         "current_slide": 0,
@@ -523,8 +535,8 @@ async def create_job(
     if not file.filename.lower().endswith((".pdf", ".pptx")):
         raise HTTPException(400, "File must be a .pdf or .pptx")
 
-    user = get_current_user(request)
-    user_id = user["id"] if user else None
+    user = require_auth(request)
+    user_id = user["id"]
 
     job_id = str(uuid.uuid4())
     job_dir = os.path.join(DATA_DIR, job_id)
@@ -946,8 +958,8 @@ def _token_dict(row: dict) -> dict:
         "provider": row["provider"],
         "token_masked": row["token_masked"],
         "is_default": row["is_default"],
-        "created_at": row["created_at"].isoformat() if row["created_at"] else None,
-        "last_used_at": row["last_used_at"].isoformat() if row["last_used_at"] else None,
+        "created_at": iso_utc(row["created_at"]),
+        "last_used_at": iso_utc(row["last_used_at"]),
     }
 
 @app.get("/api/tokens")
@@ -1001,7 +1013,8 @@ async def get_default_token_decrypted(request: Request):
 async def create_token(request: Request, data: TokenCreate):
     """Create a new token. The first token a user ever saves automatically
     becomes their default; later ones only become default if requested."""
-    user_id = caller_id(request)
+    user = require_auth(request)
+    user_id = user["id"]
     token_id = str(uuid.uuid4())
     token_encrypted = encrypt_token(data.token)
     token_masked = mask_token(data.token)
@@ -1030,7 +1043,7 @@ async def create_token(request: Request, data: TokenCreate):
         "provider": data.provider,
         "token_masked": token_masked,
         "is_default": make_default,
-        "created_at": result["created_at"].isoformat() if result else None,
+        "created_at": iso_utc(result["created_at"]) if result else None,
     }
 
 @app.get("/api/tokens/{token_id}")
@@ -1144,18 +1157,35 @@ async def delete_token(token_id: str, request: Request):
 # Frontend Routes
 # ---------------------------------------------------------------------------
 
+@app.get("/")
+async def get_home_page(request: Request):
+    """Sign-in is required for the whole app. A share link is the one
+    exception (handled on /slide/{job_id} below), so the home page never
+    needs to expose guest/anonymous jobs to browse."""
+    if not get_current_user(request):
+        return RedirectResponse(url="/login", status_code=302)
+    return FileResponse(os.path.join(FRONTEND_DIR, "index.html"), media_type="text/html")
+
 @app.get("/slide/{job_id}")
-async def get_slide_page(job_id: str):
+async def get_slide_page(job_id: str, request: Request, share: Optional[str] = None):
+    if not get_current_user(request):
+        job = get_job_by_id(job_id)
+        if not (job and _share_link_matches(job, share)):
+            return RedirectResponse(url="/login", status_code=302)
     slide_page = os.path.join(FRONTEND_DIR, "slide.html")
     return FileResponse(slide_page, media_type="text/html")
 
 @app.get("/token")
-async def get_token_page():
+async def get_token_page(request: Request):
+    if not get_current_user(request):
+        return RedirectResponse(url="/login", status_code=302)
     token_page = os.path.join(FRONTEND_DIR, "token.html")
     return FileResponse(token_page, media_type="text/html")
 
 @app.get("/login")
-async def get_login_page():
+async def get_login_page(request: Request):
+    if get_current_user(request):
+        return RedirectResponse(url="/", status_code=302)
     login_page = os.path.join(FRONTEND_DIR, "login.html")
     return FileResponse(login_page, media_type="text/html")
 

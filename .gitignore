@@ -11,3 +11,6 @@ venv/
 
 # macOS
 .DS_Store
+
+# Claude Code project-local tooling (skills, scheduled tasks) -- not app code
+.claude/
