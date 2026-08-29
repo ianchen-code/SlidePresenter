@@ -164,32 +164,66 @@
 
   <!-- Share Modal -->
   <div class="hidden fixed inset-0 bg-black/40 z-50 items-center justify-center transition-opacity duration-200 opacity-0" id="shareModal" role="dialog" aria-modal="true" aria-labelledby="shareModalTitle">
-    <div class="bg-white rounded-xl w-full max-w-md mx-5 shadow-2xl transition-all duration-200 scale-95 opacity-0">
-      <div class="px-6 py-5 border-b border-line flex justify-between items-center">
-        <h2 id="shareModalTitle" class="text-lg font-semibold m-0">Share this presentation</h2>
-        <button type="button" class="bg-transparent border-none cursor-pointer text-stone-500 hover:text-ink p-1 -m-1 rounded" id="shareModalClose" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+    <div class="bg-white rounded-xl w-full max-w-md mx-5 shadow-2xl transition-all duration-200 scale-95 opacity-0 overflow-hidden">
+      <div class="px-6 py-5 border-b border-line flex items-center gap-3">
+        <span class="flex-shrink-0 w-9 h-9 rounded-full bg-accent/10 text-accent flex items-center justify-center">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17H7a5 5 0 0 1 0-10h2" /><path d="M15 7h2a5 5 0 1 1 0 10h-2" /><path d="M8 12h8" /></svg>
+        </span>
+        <div class="flex-1 min-w-0">
+          <h2 id="shareModalTitle" class="text-lg font-semibold m-0 leading-tight">Share this presentation</h2>
+          <p class="text-xs text-stone-500 m-0 mt-0.5">Control who can view or edit</p>
+        </div>
+        <button type="button" class="flex-shrink-0 bg-transparent border-none cursor-pointer text-stone-500 hover:text-ink p-1 -m-1 rounded" id="shareModalClose" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
       </div>
-      <div class="p-6 flex flex-col gap-4">
-        <label class="flex items-center justify-between cursor-pointer">
-          <span class="text-sm font-semibold text-stone-600">Link sharing</span>
-          <input type="checkbox" id="shareEnabledToggle" class="w-4 h-4 accent-accent cursor-pointer">
+
+      <div class="p-6 flex flex-col gap-5">
+        <label class="flex items-center justify-between gap-4 cursor-pointer">
+          <span>
+            <span class="text-sm font-semibold text-ink block">Link sharing</span>
+            <span class="text-xs text-stone-500">Anyone with the link can access</span>
+          </span>
+          <span class="relative inline-flex flex-shrink-0 w-10 h-6">
+            <input type="checkbox" id="shareEnabledToggle" class="peer sr-only">
+            <span class="absolute inset-0 rounded-full bg-stone-200 peer-checked:bg-accent transition-colors duration-200"></span>
+            <span class="absolute left-1 top-1 w-4 h-4 rounded-full bg-white shadow-sm transition-transform duration-200 peer-checked:translate-x-4"></span>
+          </span>
         </label>
+
         <div id="sharePermissionRow" class="hidden">
-          <label class="text-sm font-semibold text-stone-600 block mb-2">Anyone with the link can</label>
-          <div class="flex gap-4 text-sm text-stone-600">
-            <label class="flex items-center gap-1.5 cursor-pointer"><input type="radio" name="sharePermission" value="view" class="accent-accent"> View</label>
-            <label class="flex items-center gap-1.5 cursor-pointer"><input type="radio" name="sharePermission" value="edit" class="accent-accent"> Edit</label>
+          <span class="text-sm font-semibold text-ink block mb-2">Anyone with the link can</span>
+          <div class="grid grid-cols-2 gap-2">
+            <label class="cursor-pointer">
+              <input type="radio" name="sharePermission" value="view" class="peer sr-only">
+              <div class="flex items-center gap-2 border border-line rounded-lg px-3 py-2.5 text-stone-600 peer-checked:border-accent peer-checked:bg-accent/5 peer-checked:text-accent transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0" /><circle cx="12" cy="12" r="3" /></svg>
+                <span class="text-sm font-medium">View</span>
+              </div>
+            </label>
+            <label class="cursor-pointer">
+              <input type="radio" name="sharePermission" value="edit" class="peer sr-only">
+              <div class="flex items-center gap-2 border border-line rounded-lg px-3 py-2.5 text-stone-600 peer-checked:border-accent peer-checked:bg-accent/5 peer-checked:text-accent transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" /><path d="m15 5 4 4" /></svg>
+                <span class="text-sm font-medium">Edit</span>
+              </div>
+            </label>
           </div>
         </div>
+
         <div id="shareLinkRow" class="hidden">
-          <label class="text-sm font-semibold text-stone-600 block mb-2">Link</label>
+          <span class="text-sm font-semibold text-ink block mb-2">Link</span>
           <div class="flex gap-2">
-            <input type="text" id="shareLinkInput" readonly class="flex-1 min-w-0 px-3 py-2.5 border border-line rounded-lg text-xs font-mono bg-stone-50">
-            <button type="button" id="shareCopyBtn" class="flex-shrink-0 bg-transparent text-ink border border-line rounded-lg px-3 py-2.5 text-sm font-semibold cursor-pointer hover:bg-stone-100">Copy</button>
+            <div class="flex-1 min-w-0 flex items-center px-3 py-2.5 border border-line rounded-lg bg-stone-50">
+              <input type="text" id="shareLinkInput" readonly class="w-full min-w-0 bg-transparent text-xs font-mono text-stone-600 outline-none">
+            </div>
+            <button type="button" id="shareCopyBtn" class="flex-shrink-0 inline-flex items-center gap-1.5 bg-accent text-white border-none rounded-lg px-3.5 py-2.5 text-sm font-semibold cursor-pointer hover:opacity-90 transition-opacity">
+              <svg id="shareCopyIcon" xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2" /><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" /></svg>
+              <span id="shareCopyLabel">Copy</span>
+            </button>
           </div>
         </div>
       </div>
-      <div class="px-6 py-4 border-t border-line flex justify-end gap-3">
+
+      <div class="px-6 py-4 border-t border-line flex justify-end gap-3 bg-stone-50">
         <button class="bg-accent text-white border-none rounded-lg px-4 py-2.5 text-sm font-semibold cursor-pointer hover:opacity-90" id="shareDoneBtn" type="button">Done</button>
       </div>
     </div>
@@ -244,6 +278,8 @@
     const shareLinkRow = document.getElementById('shareLinkRow');
     const shareLinkInput = document.getElementById('shareLinkInput');
     const shareCopyBtn = document.getElementById('shareCopyBtn');
+    const shareCopyIcon = document.getElementById('shareCopyIcon');
+    const shareCopyLabel = document.getElementById('shareCopyLabel');
     const shareDoneBtn = document.getElementById('shareDoneBtn');
 
     let pollTimer = null;
@@ -901,12 +937,17 @@
       });
     });
 
+    const SHARE_COPY_ICON = shareCopyIcon.innerHTML;
+    const SHARE_CHECK_ICON = '<path d="M20 6 9 17l-5-5" />';
     shareCopyBtn.addEventListener('click', async () => {
       try {
         await navigator.clipboard.writeText(shareLinkInput.value);
-        const original = shareCopyBtn.textContent;
-        shareCopyBtn.textContent = 'Copied!';
-        setTimeout(() => { shareCopyBtn.textContent = original; }, 1500);
+        shareCopyIcon.innerHTML = SHARE_CHECK_ICON;
+        shareCopyLabel.textContent = 'Copied!';
+        setTimeout(() => {
+          shareCopyIcon.innerHTML = SHARE_COPY_ICON;
+          shareCopyLabel.textContent = 'Copy';
+        }, 1500);
       } catch (err) {
         shareLinkInput.select();
       }
