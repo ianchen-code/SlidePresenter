@@ -36,6 +36,7 @@ from pipeline import (
     improve_title_description,
     edit_slide_narration,
     get_slide_narration,
+    list_models,
 )
 
 # ---------------------------------------------------------------------------
@@ -992,6 +993,27 @@ def _token_dict(row: dict) -> dict:
         "created_at": iso_utc(row["created_at"]),
         "last_used_at": iso_utc(row["last_used_at"]),
     }
+
+class TestConnectionRequest(BaseModel):
+    provider: str
+    provider_host: Optional[str] = None
+    api_key: str
+
+@app.post("/api/tokens/test-connection")
+async def test_token_connection(data: TestConnectionRequest, request: Request):
+    """Validate a token before it's saved by listing its provider's
+    available models -- a successful call proves the key actually works.
+    Also backs the Fetch Models button in Manage Tokens."""
+    require_auth(request)
+    if data.provider not in VALID_PROVIDERS:
+        raise HTTPException(400, f"provider must be one of {VALID_PROVIDERS}")
+    if data.provider == "other" and not (data.provider_host or "").strip():
+        raise HTTPException(400, "provider_host is required when provider is 'other'")
+    try:
+        models = list_models(data.api_key, data.provider, data.provider_host)
+    except Exception as e:
+        raise HTTPException(400, f"Connection test failed: {e}")
+    return {"ok": True, "models": models}
 
 @app.get("/api/tokens")
 async def list_tokens(request: Request):

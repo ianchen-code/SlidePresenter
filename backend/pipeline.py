@@ -136,6 +136,69 @@ def chat_completion(
     raise ValueError(f"Unknown provider: {provider}")
 
 
+# ---------------------------------------------------------------------------
+# List available models per provider. Doubles as a connectivity/auth test --
+# a successful call proves the key actually works, which is why Manage
+# Tokens runs this before letting a token be saved.
+# ---------------------------------------------------------------------------
+
+# Model ids that show up in OpenAI's /v1/models but aren't chat models --
+# filtered out so the picker only shows models this app can actually use.
+_OPENAI_NON_CHAT_HINTS = ("embedding", "whisper", "tts", "dall-e", "moderation", "davinci-002", "babbage-002")
+
+
+def _list_models_anthropic(api_key: str, timeout: int) -> List[str]:
+    headers = {"x-api-key": api_key, "anthropic-version": ANTHROPIC_VERSION}
+    response = requests.get("https://api.anthropic.com/v1/models", headers=headers, timeout=timeout)
+    response.raise_for_status()
+    return [m["id"] for m in response.json().get("data", [])]
+
+
+def _list_models_openai_style(api_key: str, url: str, timeout: int) -> List[str]:
+    headers = {"Authorization": f"Bearer {api_key}"}
+    response = requests.get(url, headers=headers, timeout=timeout)
+    response.raise_for_status()
+    return [m["id"] for m in response.json().get("data", [])]
+
+
+def _list_models_gemini(api_key: str, timeout: int) -> List[str]:
+    headers = {"x-goog-api-key": api_key}
+    response = requests.get("https://generativelanguage.googleapis.com/v1beta/models", headers=headers, timeout=timeout)
+    response.raise_for_status()
+    ids = []
+    for m in response.json().get("models", []):
+        if "generateContent" not in m.get("supportedGenerationMethods", []):
+            continue  # some Gemini models are embedding-only etc.
+        name = m.get("name", "")
+        ids.append(name.split("/", 1)[1] if "/" in name else name)
+    return sorted(ids)
+
+
+def list_models(
+    api_key: str,
+    provider: str = "anthropic",
+    provider_host: Optional[str] = None,
+    timeout: int = 15,
+) -> List[str]:
+    """List available model ids for the token's provider."""
+    provider = (provider or "anthropic").lower()
+    if provider == "anthropic":
+        return _list_models_anthropic(api_key, timeout)
+    if provider == "openai":
+        ids = _list_models_openai_style(api_key, "https://api.openai.com/v1/models", timeout)
+        return sorted(m for m in ids if not any(hint in m.lower() for hint in _OPENAI_NON_CHAT_HINTS))
+    if provider == "gemini":
+        return _list_models_gemini(api_key, timeout)
+    if provider == "other":
+        if not provider_host:
+            raise ValueError("This token's provider is 'Other' but has no API host set.")
+        # provider_host is the full chat-completions URL; models list is
+        # conventionally its sibling endpoint under the same /v1 base.
+        base = provider_host.rsplit("/chat/completions", 1)[0].rstrip("/")
+        return _list_models_openai_style(api_key, f"{base}/models", timeout)
+    raise ValueError(f"Unknown provider: {provider}")
+
+
 def get_slide_narration(
     image_path: str,
     api_key: str,

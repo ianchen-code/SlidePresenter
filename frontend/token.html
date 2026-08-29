@@ -86,9 +86,21 @@
           <p class="text-xs text-stone-500 mt-1.5">Full URL of an OpenAI-compatible chat completions endpoint</p>
         </div>
         <div class="mb-4">
-          <label for="tokenModel" class="text-sm font-semibold text-stone-600 block mb-2">Model</label>
-          <input type="text" id="tokenModel" placeholder="claude-sonnet-4-5" class="w-full px-3 py-2.5 border border-line rounded-lg text-sm bg-white">
-          <p class="text-xs text-stone-500 mt-1.5">Used for narration and every AI action with this token</p>
+          <div class="flex justify-between items-center mb-2">
+            <label for="tokenModel" class="text-sm font-semibold text-stone-600">Model</label>
+            <button type="button" id="fetchModelsBtn" class="flex items-center gap-1 text-xs text-accent hover:underline font-semibold">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                <path d="M3 3v5h5" />
+                <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
+                <path d="M16 16h5v5" />
+              </svg>
+              <span id="fetchModelsBtnLabel">Fetch models</span>
+            </button>
+          </div>
+          <input type="text" id="tokenModel" list="modelSuggestions" placeholder="claude-sonnet-4-5" class="w-full px-3 py-2.5 border border-line rounded-lg text-sm bg-white">
+          <datalist id="modelSuggestions"></datalist>
+          <p class="text-xs text-stone-500 mt-1.5">Used for narration and every AI action with this token. Enter your API token below, then "Fetch models" to list what's actually available.</p>
         </div>
         <div class="mb-4">
           <label for="tokenValue" class="text-sm font-semibold text-stone-600 block mb-2">API Token</label>
@@ -144,8 +156,51 @@
     const tokenProviderHostRow = document.getElementById('tokenProviderHostRow');
     const tokenProviderHost = document.getElementById('tokenProviderHost');
     const tokenModel = document.getElementById('tokenModel');
+    const modelSuggestions = document.getElementById('modelSuggestions');
+    const fetchModelsBtn = document.getElementById('fetchModelsBtn');
+    const fetchModelsBtnLabel = document.getElementById('fetchModelsBtnLabel');
     const tokenValue = document.getElementById('tokenValue');
     const tokenIsDefault = document.getElementById('tokenIsDefault');
+
+    // Also doubles as the pre-save connectivity/auth check -- a successful
+    // call proves the key actually works before Manage Tokens will save it.
+    async function testConnection(provider, providerHost, apiKey) {
+      const res = await fetch('/api/tokens/test-connection', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider, provider_host: provider === 'other' ? providerHost : null, api_key: apiKey })
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.detail || 'Connection test failed');
+      }
+      return res.json(); // { ok, models }
+    }
+
+    fetchModelsBtn.addEventListener('click', async () => {
+      const apiKey = tokenValue.value.trim();
+      if (!apiKey) {
+        showToast('Enter an API token first', { type: 'error' });
+        return;
+      }
+      if (tokenProvider.value === 'other' && !tokenProviderHost.value.trim()) {
+        showToast('Enter the API endpoint URL first', { type: 'error' });
+        return;
+      }
+
+      fetchModelsBtn.disabled = true;
+      fetchModelsBtnLabel.textContent = 'Fetching...';
+      try {
+        const { models } = await testConnection(tokenProvider.value, tokenProviderHost.value.trim(), apiKey);
+        modelSuggestions.innerHTML = models.map(m => `<option value="${m.replace(/"/g, '&quot;')}"></option>`).join('');
+        showToast(`Connected — ${models.length} model(s) found`, { type: 'success' });
+      } catch (err) {
+        showToast(err.message, { type: 'error' });
+      } finally {
+        fetchModelsBtn.disabled = false;
+        fetchModelsBtnLabel.textContent = 'Fetch models';
+      }
+    });
 
     const DEFAULT_MODEL_BY_PROVIDER = {
       anthropic: 'claude-sonnet-4-5',
@@ -322,6 +377,23 @@
       }
 
       saveBtn.disabled = true;
+
+      // A new key (always the case when creating, optionally when editing)
+      // must prove it actually works before it's allowed to be saved.
+      // Editing without changing the key skips this -- there's no plaintext
+      // to test against without decrypting the one already stored.
+      if (token) {
+        saveBtn.textContent = 'Testing connection...';
+        try {
+          await testConnection(provider, providerHost, token);
+        } catch (err) {
+          showToast(err.message, { type: 'error' });
+          saveBtn.disabled = false;
+          saveBtn.textContent = editingTokenId ? 'Update Token' : 'Save Token';
+          return;
+        }
+      }
+
       saveBtn.textContent = 'Saving...';
 
       const wasEditing = !!editingTokenId;
