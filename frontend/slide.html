@@ -302,14 +302,13 @@
     // Every AI action on this page (regenerate, auto-fill, per-slide spark
     // menu) uses whichever token is marked default in Manage Tokens -- no
     // per-form token picker.
-    async function getApiKey() {
+    async function getDefaultToken() {
       const res = await fetch('/api/tokens/default/decrypt');
       if (!res.ok) {
         const body = await res.json().catch(() => null);
         throw new Error(body?.detail || 'Failed to retrieve token');
       }
-      const data = await res.json();
-      return data.token;
+      return res.json(); // { token, provider, provider_host }
     }
 
     // Reusable AI-actions dropdown, anchored to a spark-icon trigger button.
@@ -492,15 +491,15 @@
     }
 
     async function handleSlideAiAction(item, textarea, sparkBtn, action, promptText) {
-      let apiKey;
+      let tokenInfo;
       try {
-        apiKey = await getApiKey();
+        tokenInfo = await getDefaultToken();
       } catch (err) {
         showToast('Failed to retrieve API key: ' + err.message, { type: 'error' });
         return;
       }
-      if (!apiKey) {
-        showToast('Select a token or enter an API key to use AI writing tools', { type: 'error' });
+      if (!tokenInfo?.token) {
+        showToast('No default API token set -- add one in Manage Tokens', { type: 'error' });
         return;
       }
 
@@ -512,7 +511,10 @@
         const res = await fetch(withShare(`/api/jobs/${jobId}/slides/${item.slide}/ai-text`), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ api_key: apiKey, action, current_text: textarea.value, prompt: promptText })
+          body: JSON.stringify({
+            api_key: tokenInfo.token, action, current_text: textarea.value, prompt: promptText,
+            provider: tokenInfo.provider, provider_host: tokenInfo.provider_host,
+          })
         });
         if (!res.ok) throw new Error(await res.text());
         const data = await res.json();
@@ -683,16 +685,16 @@
     }
 
     async function submitRegeneration() {
-      let apiKey;
+      let tokenInfo;
       try {
-        apiKey = await getApiKey();
+        tokenInfo = await getDefaultToken();
       } catch (err) {
         showToast('Failed to retrieve API key: ' + err.message, { type: 'error' });
         return;
       }
 
-      if (!apiKey) {
-        showToast('Please select a token or enter an API key', { type: 'error' });
+      if (!tokenInfo?.token) {
+        showToast('No default API token set -- add one in Manage Tokens', { type: 'error' });
         return;
       }
 
@@ -710,7 +712,7 @@
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            api_key: apiKey,
+            api_key: tokenInfo.token,
             changes: changedSlides.map(s => ({ slide: s.slide, text: s.text }))
           })
         });
@@ -763,16 +765,16 @@
     }
 
     async function handleTitleDescAction(action) {
-      let apiKey;
+      let tokenInfo;
       try {
-        apiKey = await getApiKey();
+        tokenInfo = await getDefaultToken();
       } catch (err) {
         showToast('Failed to retrieve API key: ' + err.message, { type: 'error' });
         return;
       }
 
-      if (!apiKey) {
-        showToast('Select a token or enter an API key to use AI writing tools', { type: 'error' });
+      if (!tokenInfo?.token) {
+        showToast('No default API token set -- add one in Manage Tokens', { type: 'error' });
         return;
       }
 
@@ -784,10 +786,12 @@
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            api_key: apiKey,
+            api_key: tokenInfo.token,
             action,
             current_title: titleInput.value,
             current_description: descriptionInput.value,
+            provider: tokenInfo.provider,
+            provider_host: tokenInfo.provider_host,
           })
         });
         if (!res.ok) throw new Error(await res.text());

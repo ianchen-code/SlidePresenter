@@ -80,10 +80,11 @@
           <div>
             <label for="model" class="text-sm font-semibold text-stone-600 block mb-2">AI Model</label>
             <select id="model" name="model" class="w-full px-3 py-2.5 border border-line rounded-lg text-sm bg-white">
-              <option value="claude-sonnet-4-5">Claude Sonnet 4.5</option>
-              <option value="claude-3-opus">Claude 3 Opus</option>
-              <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+              <option value="claude-sonnet-4-5">Claude Sonnet 4.5 (Anthropic)</option>
+              <option value="claude-3-opus">Claude 3 Opus (Anthropic)</option>
+              <option value="gpt-4o">GPT-4o (OpenAI)</option>
             </select>
+            <p class="text-xs text-stone-500 mt-1.5">Pick a model matching your default token's provider (or, for a custom "Other" token, whatever your endpoint expects).</p>
           </div>
           <div>
             <label for="voice" class="text-sm font-semibold text-stone-600 block mb-2">Narration voice</label>
@@ -264,30 +265,29 @@
     }
 
     // Get API key (from saved token or manual input)
-    async function getApiKey() {
+    async function getDefaultToken() {
       const res = await fetch('/api/tokens/default/decrypt');
       if (!res.ok) {
         const body = await res.json().catch(() => null);
         throw new Error(body?.detail || 'Failed to retrieve token');
       }
-      const data = await res.json();
-      return data.token;
+      return res.json(); // { token, provider, provider_host }
     }
 
     // Form submission
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
 
-      // Get API key
-      let apiKey;
+      // Get API key + which provider/host it belongs to
+      let tokenInfo;
       try {
-        apiKey = await getApiKey();
+        tokenInfo = await getDefaultToken();
       } catch (err) {
         showToast('Failed to retrieve API key: ' + err.message, { type: 'error' });
         return;
       }
 
-      if (!apiKey) {
+      if (!tokenInfo?.token) {
         showToast('No default API token set -- add one in Manage Tokens', { type: 'error' });
         return;
       }
@@ -299,9 +299,11 @@
       statusText.textContent = 'Uploading...';
 
       // Set the API key in the hidden input
-      apiKeyInput.value = apiKey;
+      apiKeyInput.value = tokenInfo.token;
 
       const fd = new FormData(form);
+      fd.append('provider', tokenInfo.provider || 'anthropic');
+      fd.append('provider_host', tokenInfo.provider_host || '');
       try {
         const res = await fetch('/api/jobs', { method: 'POST', body: fd });
         if (!res.ok) throw new Error(await res.text());

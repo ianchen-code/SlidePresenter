@@ -56,71 +56,94 @@ NARRATION_PROMPT = (
 )
 
 
-NARRATION_API_URL = "https://hnd1.aihub.zeabur.ai/v1/chat/completions"
+# ---------------------------------------------------------------------------
+# Multi-provider LLM dispatch. Every saved token has a provider ("anthropic",
+# "openai", or "other" with a user-supplied host from Manage Tokens), and
+# every AI call in this file goes through chat_completion() below instead of
+# one hardcoded endpoint, so whichever provider the caller's token is for
+# gets used correctly.
+# ---------------------------------------------------------------------------
+
+ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
+ANTHROPIC_VERSION = "2023-06-01"
+OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
+
+
+def _openai_style_completion(prompt: str, api_key: str, model: str, url: str, timeout: int, image_b64: Optional[str] = None) -> str:
+    """OpenAI-compatible chat completions -- used for OpenAI itself, and for
+    'other' (any self-hosted or third-party OpenAI-compatible proxy)."""
+    content = [{"type": "text", "text": prompt}]
+    if image_b64:
+        content.append({"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image_b64}"}})
+    payload = {"model": model, "messages": [{"role": "user", "content": content}]}
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    response = requests.post(url, headers=headers, json=payload, timeout=timeout)
+    response.raise_for_status()
+    return response.json()["choices"][0]["message"]["content"].strip()
+
+
+def _anthropic_completion(prompt: str, api_key: str, model: str, timeout: int, image_b64: Optional[str] = None) -> str:
+    content = []
+    if image_b64:
+        content.append({"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": image_b64}})
+    content.append({"type": "text", "text": prompt})
+    payload = {"model": model, "max_tokens": 1024, "messages": [{"role": "user", "content": content}]}
+    headers = {
+        "x-api-key": api_key,
+        "anthropic-version": ANTHROPIC_VERSION,
+        "Content-Type": "application/json",
+    }
+    response = requests.post(ANTHROPIC_API_URL, headers=headers, json=payload, timeout=timeout)
+    response.raise_for_status()
+    return response.json()["content"][0]["text"].strip()
+
+
+def chat_completion(
+    prompt: str,
+    api_key: str,
+    model: str,
+    provider: str = "anthropic",
+    provider_host: Optional[str] = None,
+    timeout: int = 30,
+    image_b64: Optional[str] = None,
+) -> str:
+    """Dispatch one prompt (optionally with an image) to the token's
+    provider, return the raw text reply."""
+    provider = (provider or "anthropic").lower()
+    if provider == "anthropic":
+        return _anthropic_completion(prompt, api_key, model, timeout, image_b64=image_b64)
+    if provider == "openai":
+        return _openai_style_completion(prompt, api_key, model, OPENAI_API_URL, timeout, image_b64=image_b64)
+    if provider == "other":
+        if not provider_host:
+            raise ValueError("This token's provider is 'Other' but has no API host set. Edit it in Manage Tokens.")
+        return _openai_style_completion(prompt, api_key, model, provider_host, timeout, image_b64=image_b64)
+    raise ValueError(f"Unknown provider: {provider}")
 
 
 def get_slide_narration(
     image_path: str,
     api_key: str,
     model: str = "claude-sonnet-4-5",
+    provider: str = "anthropic",
+    provider_host: Optional[str] = None,
     max_retries: int = 3,
     timeout: int = 60,
 ) -> str:
-    """Uses the Zeabur AI Hub OpenAI-compatible chat completions endpoint
-    (same one the original notebook used)."""
+    """Ask the LLM to narrate one slide, given its rendered image."""
     with open(image_path, "rb") as f:
         image_b64 = base64.b64encode(f.read()).decode()
-
-    payload = {
-        "model": model,
-        "messages": [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": NARRATION_PROMPT},
-                    {
-                        "type": "image_url",
-                        "image_url": {"url": f"data:image/png;base64,{image_b64}"},
-                    },
-                ],
-            }
-        ],
-    }
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
 
     last_err = None
     for attempt in range(1, max_retries + 1):
         try:
-            response = requests.post(
-                NARRATION_API_URL,
-                headers=headers,
-                json=payload,
-                timeout=timeout,
-            )
-            response.raise_for_status()
-            data = response.json()
-            return data["choices"][0]["message"]["content"].strip()
+            return chat_completion(NARRATION_PROMPT, api_key, model, provider, provider_host, timeout=timeout, image_b64=image_b64)
         except requests.exceptions.RequestException as e:
             last_err = e
             if attempt < max_retries:
                 import time
                 time.sleep(3)
     raise RuntimeError(f"Narration request failed after {max_retries} attempts: {last_err}")
-
-
-def _chat_completion(prompt: str, api_key: str, model: str, timeout: int = 30) -> str:
-    """POST one prompt to the narration LLM endpoint, return the raw text reply."""
-    payload = {"model": model, "messages": [{"role": "user", "content": prompt}]}
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
-    response = requests.post(NARRATION_API_URL, headers=headers, json=payload, timeout=timeout)
-    response.raise_for_status()
-    return response.json()["choices"][0]["message"]["content"].strip()
 
 
 def _parse_json_reply(content: str) -> dict:
@@ -168,11 +191,13 @@ def generate_title_description(
     transcript: List[dict],
     api_key: str,
     model: str = "claude-sonnet-4-5",
+    provider: str = "anthropic",
+    provider_host: Optional[str] = None,
     timeout: int = 30,
 ) -> dict:
     """Suggest a fresh title + description for the whole deck, from scratch."""
     prompt = GENERATE_TITLE_DESCRIPTION_PROMPT.format(script=_script_from_transcript(transcript))
-    content = _chat_completion(prompt, api_key, model, timeout=timeout)
+    content = chat_completion(prompt, api_key, model, provider, provider_host, timeout=timeout)
     return _clean_title_description(_parse_json_reply(content))
 
 
@@ -182,6 +207,8 @@ def improve_title_description(
     transcript: List[dict],
     api_key: str,
     model: str = "claude-sonnet-4-5",
+    provider: str = "anthropic",
+    provider_host: Optional[str] = None,
     timeout: int = 30,
 ) -> dict:
     """Polish an existing title + description without changing their meaning."""
@@ -190,7 +217,7 @@ def improve_title_description(
         description=current_description or "(none)",
         script=_script_from_transcript(transcript),
     )
-    content = _chat_completion(prompt, api_key, model, timeout=timeout)
+    content = chat_completion(prompt, api_key, model, provider, provider_host, timeout=timeout)
     return _clean_title_description(_parse_json_reply(content))
 
 
@@ -216,6 +243,8 @@ def edit_slide_narration(
     api_key: str,
     model: str = "claude-sonnet-4-5",
     instruction: Optional[str] = None,
+    provider: str = "anthropic",
+    provider_host: Optional[str] = None,
     timeout: int = 30,
 ) -> str:
     """Improve existing narration, or rewrite it per a custom instruction."""
@@ -224,7 +253,7 @@ def edit_slide_narration(
         if instruction
         else IMPROVE_NARRATION_PROMPT.format(text=current_text)
     )
-    return _chat_completion(prompt, api_key, model, timeout=timeout)
+    return chat_completion(prompt, api_key, model, provider, provider_host, timeout=timeout)
 
 
 # ---------------------------------------------------------------------------
@@ -381,6 +410,8 @@ def run_pipeline(
     api_key: str,
     voice: str = "en-US-ChristopherNeural",
     model: str = "claude-sonnet-4-5",
+    provider: str = "anthropic",
+    provider_host: Optional[str] = None,
     progress_cb: Optional[ProgressCB] = None,
 ) -> dict:
     """Runs the full pipeline for one uploaded file. Returns
@@ -405,7 +436,7 @@ def run_pipeline(
     cumulative_time = 0.0
     for i, image_path in enumerate(slide_images, start=1):
         report("narrating", i, total, f"Narrating slide {i}/{total}")
-        narration = get_slide_narration(image_path, api_key, model=model)
+        narration = get_slide_narration(image_path, api_key, model=model, provider=provider, provider_host=provider_host)
 
         narration_txt_path = os.path.join(slides_dir, f"slide_{i:02d}_narration.txt")
         with open(narration_txt_path, "w", encoding="utf-8") as f:
@@ -442,7 +473,7 @@ def run_pipeline(
     report("naming", total, total, "Naming the presentation")
     title, description = None, None
     try:
-        suggestion = generate_title_description(narrations, api_key, model=model)
+        suggestion = generate_title_description(narrations, api_key, model=model, provider=provider, provider_host=provider_host)
         title, description = suggestion["title"], suggestion["description"]
     except Exception:
         pass  # naming is a nice-to-have; never fail the whole job over it

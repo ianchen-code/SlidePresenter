@@ -239,6 +239,7 @@ def init_db():
         )
     """)
     cursor.execute("ALTER TABLE tokens ADD COLUMN IF NOT EXISTS is_default BOOLEAN NOT NULL DEFAULT FALSE")
+    cursor.execute("ALTER TABLE tokens ADD COLUMN IF NOT EXISTS provider_host TEXT")
 
     conn.commit()
     cursor.close()
@@ -531,6 +532,8 @@ async def create_job(
     api_key: str = Form(...),
     voice: str = Form("en-US-ChristopherNeural"),
     model: str = Form(...),
+    provider: str = Form("anthropic"),
+    provider_host: Optional[str] = Form(None),
 ):
     if not file.filename.lower().endswith((".pdf", ".pptx")):
         raise HTTPException(400, "File must be a .pdf or .pptx")
@@ -566,7 +569,7 @@ async def create_job(
     # Start background thread
     thread = threading.Thread(
         target=_run_job,
-        args=(job_id, upload_path, job_dir, api_key, voice, model),
+        args=(job_id, upload_path, job_dir, api_key, voice, model, provider, provider_host),
         daemon=True,
     )
     thread.start()
@@ -574,7 +577,7 @@ async def create_job(
     return {"job_id": job_id}
 
 
-def _run_job(job_id, upload_path, job_dir, api_key, voice, model):
+def _run_job(job_id, upload_path, job_dir, api_key, voice, model, provider="anthropic", provider_host=None):
     def progress_cb(stage, cur, total, msg):
         update_job(
             job_id,
@@ -593,6 +596,8 @@ def _run_job(job_id, upload_path, job_dir, api_key, voice, model):
             api_key=api_key,
             voice=voice,
             model=model,
+            provider=provider,
+            provider_host=provider_host,
             progress_cb=progress_cb,
         )
         final_path = result["video_path"]
@@ -676,6 +681,8 @@ class GenerateDetailsRequest(BaseModel):
     action: str = "generate"  # "generate" | "improve"
     current_title: Optional[str] = None
     current_description: Optional[str] = None
+    provider: str = "anthropic"
+    provider_host: Optional[str] = None
 
 @app.post("/api/jobs/{job_id}/generate-details")
 async def generate_job_details(job_id: str, data: GenerateDetailsRequest, request: Request, share: Optional[str] = None):
@@ -700,8 +707,13 @@ async def generate_job_details(job_id: str, data: GenerateDetailsRequest, reques
     model = job.get("model") or "claude-sonnet-4-5"
     try:
         if data.action == "improve" and (data.current_title or data.current_description):
-            return improve_title_description(data.current_title, data.current_description, transcript, data.api_key, model=model)
-        return generate_title_description(transcript, data.api_key, model=model)
+            return improve_title_description(
+                data.current_title, data.current_description, transcript, data.api_key,
+                model=model, provider=data.provider, provider_host=data.provider_host,
+            )
+        return generate_title_description(
+            transcript, data.api_key, model=model, provider=data.provider, provider_host=data.provider_host,
+        )
     except Exception as e:
         raise HTTPException(502, f"AI auto-fill failed: {e}")
 
@@ -814,6 +826,8 @@ class SlideAiTextRequest(BaseModel):
     action: str  # "regenerate" | "improve" | "custom"
     current_text: Optional[str] = None  # required for improve/custom
     prompt: Optional[str] = None  # required for custom
+    provider: str = "anthropic"
+    provider_host: Optional[str] = None
 
 @app.post("/api/jobs/{job_id}/slides/{slide_num}/ai-text")
 async def slide_ai_text(job_id: str, slide_num: int, data: SlideAiTextRequest, request: Request, share: Optional[str] = None):
@@ -833,7 +847,7 @@ async def slide_ai_text(job_id: str, slide_num: int, data: SlideAiTextRequest, r
         if not os.path.exists(image_path):
             raise HTTPException(404, "Slide image not found")
         try:
-            return {"text": get_slide_narration(image_path, data.api_key, model=model)}
+            return {"text": get_slide_narration(image_path, data.api_key, model=model, provider=data.provider, provider_host=data.provider_host)}
         except Exception as e:
             raise HTTPException(502, f"AI regeneration failed: {e}")
 
@@ -848,6 +862,8 @@ async def slide_ai_text(job_id: str, slide_num: int, data: SlideAiTextRequest, r
                 data.api_key,
                 model=model,
                 instruction=data.prompt if data.action == "custom" else None,
+                provider=data.provider,
+                provider_host=data.provider_host,
             )
             return {"text": text}
         except Exception as e:
@@ -939,16 +955,20 @@ def _regenerate_job(job_id: str, job_dir: str, changes: List[SlideChange], api_k
 # Token Management Endpoints
 # ---------------------------------------------------------------------------
 
+VALID_PROVIDERS = ("anthropic", "openai", "other")
+
 class TokenCreate(BaseModel):
     name: str
     token: str
     provider: str = "anthropic"
+    provider_host: Optional[str] = None  # required when provider == "other"
     is_default: bool = False
 
 class TokenUpdate(BaseModel):
     name: Optional[str] = None
     token: Optional[str] = None
     provider: Optional[str] = None
+    provider_host: Optional[str] = None
     is_default: Optional[bool] = None
 
 def _token_dict(row: dict) -> dict:
@@ -956,6 +976,7 @@ def _token_dict(row: dict) -> dict:
         "id": row["id"],
         "name": row["name"],
         "provider": row["provider"],
+        "provider_host": row.get("provider_host"),
         "token_masked": row["token_masked"],
         "is_default": row["is_default"],
         "created_at": iso_utc(row["created_at"]),
@@ -968,7 +989,7 @@ async def list_tokens(request: Request):
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT id, name, provider, token_masked, is_default, created_at, last_used_at
+            SELECT id, name, provider, provider_host, token_masked, is_default, created_at, last_used_at
             FROM tokens WHERE user_id IS NOT DISTINCT FROM %s ORDER BY created_at DESC
         """, (caller_id(request),))
         return [_token_dict(row) for row in cursor.fetchall()]
@@ -980,7 +1001,7 @@ async def get_default_token(request: Request):
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT id, name, provider, token_masked, is_default, created_at, last_used_at
+            SELECT id, name, provider, provider_host, token_masked, is_default, created_at, last_used_at
             FROM tokens WHERE user_id IS NOT DISTINCT FROM %s AND is_default = TRUE
         """, (caller_id(request),))
         row = cursor.fetchone()
@@ -988,12 +1009,13 @@ async def get_default_token(request: Request):
 
 @app.get("/api/tokens/default/decrypt")
 async def get_default_token_decrypted(request: Request):
-    """The caller's default token, decrypted -- used by every AI action in
-    the app so no page needs its own token picker."""
+    """The caller's default token, decrypted -- plus which provider/host it's
+    for, so every AI action call site knows which API to hit. Used by every
+    AI action in the app so no page needs its own token picker."""
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT id, token_encrypted FROM tokens
+            SELECT id, token_encrypted, provider, provider_host FROM tokens
             WHERE user_id IS NOT DISTINCT FROM %s AND is_default = TRUE
         """, (caller_id(request),))
         row = cursor.fetchone()
@@ -1005,7 +1027,11 @@ async def get_default_token_decrypted(request: Request):
             conn.commit()
 
         try:
-            return {"token": decrypt_token(row["token_encrypted"])}
+            return {
+                "token": decrypt_token(row["token_encrypted"]),
+                "provider": row["provider"],
+                "provider_host": row["provider_host"],
+            }
         except InvalidToken:
             raise HTTPException(400, "Your default token was saved with a previous encryption scheme. Please delete and re-add it.")
 
@@ -1013,11 +1039,17 @@ async def get_default_token_decrypted(request: Request):
 async def create_token(request: Request, data: TokenCreate):
     """Create a new token. The first token a user ever saves automatically
     becomes their default; later ones only become default if requested."""
+    if data.provider not in VALID_PROVIDERS:
+        raise HTTPException(400, f"provider must be one of {VALID_PROVIDERS}")
+    if data.provider == "other" and not (data.provider_host or "").strip():
+        raise HTTPException(400, "provider_host is required when provider is 'other'")
+
     user = require_auth(request)
     user_id = user["id"]
     token_id = str(uuid.uuid4())
     token_encrypted = encrypt_token(data.token)
     token_masked = mask_token(data.token)
+    provider_host = data.provider_host.strip() if data.provider == "other" and data.provider_host else None
 
     with DB_LOCK:
         with get_db() as conn:
@@ -1030,10 +1062,10 @@ async def create_token(request: Request, data: TokenCreate):
                 cursor.execute("UPDATE tokens SET is_default = FALSE WHERE user_id IS NOT DISTINCT FROM %s", (user_id,))
 
             cursor.execute("""
-                INSERT INTO tokens (id, user_id, name, provider, token_encrypted, token_masked, is_default)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO tokens (id, user_id, name, provider, provider_host, token_encrypted, token_masked, is_default)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING created_at
-            """, (token_id, user_id, data.name, data.provider, token_encrypted, token_masked, make_default))
+            """, (token_id, user_id, data.name, data.provider, provider_host, token_encrypted, token_masked, make_default))
             result = cursor.fetchone()
             conn.commit()
 
@@ -1041,6 +1073,7 @@ async def create_token(request: Request, data: TokenCreate):
         "id": token_id,
         "name": data.name,
         "provider": data.provider,
+        "provider_host": provider_host,
         "token_masked": token_masked,
         "is_default": make_default,
         "created_at": iso_utc(result["created_at"]) if result else None,
@@ -1052,7 +1085,7 @@ async def get_token(token_id: str, request: Request):
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT id, name, provider, token_masked, is_default, created_at, last_used_at
+            SELECT id, name, provider, provider_host, token_masked, is_default, created_at, last_used_at
             FROM tokens WHERE id = %s AND user_id IS NOT DISTINCT FROM %s
         """, (token_id, caller_id(request)))
         row = cursor.fetchone()
@@ -1066,7 +1099,7 @@ async def get_decrypted_token(token_id: str, request: Request):
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT token_encrypted FROM tokens WHERE id = %s AND user_id IS NOT DISTINCT FROM %s",
+            "SELECT token_encrypted, provider, provider_host FROM tokens WHERE id = %s AND user_id IS NOT DISTINCT FROM %s",
             (token_id, caller_id(request)),
         )
         row = cursor.fetchone()
@@ -1082,7 +1115,11 @@ async def get_decrypted_token(token_id: str, request: Request):
             conn.commit()
 
         try:
-            return {"token": decrypt_token(row["token_encrypted"])}
+            return {
+                "token": decrypt_token(row["token_encrypted"]),
+                "provider": row["provider"],
+                "provider_host": row["provider_host"],
+            }
         except InvalidToken:
             raise HTTPException(400, "This token was saved with a previous encryption scheme. Please delete and re-add it.")
 
@@ -1090,6 +1127,9 @@ async def get_decrypted_token(token_id: str, request: Request):
 async def update_token(token_id: str, data: TokenUpdate, request: Request):
     """Update a token. Scoped to the caller. Setting is_default=true demotes
     whichever other token was previously the default."""
+    if data.provider is not None and data.provider not in VALID_PROVIDERS:
+        raise HTTPException(400, f"provider must be one of {VALID_PROVIDERS}")
+
     user_id = caller_id(request)
     with get_db() as conn:
         cursor = conn.cursor()
@@ -1106,11 +1146,20 @@ async def update_token(token_id: str, data: TokenUpdate, request: Request):
             updates["name"] = data.name
         if data.provider is not None:
             updates["provider"] = data.provider
+            if data.provider != "other":
+                updates["provider_host"] = None  # meaningless for anthropic/openai
+        if data.provider_host is not None:
+            updates["provider_host"] = data.provider_host.strip() or None
         if data.token is not None:
             updates["token_encrypted"] = encrypt_token(data.token)
             updates["token_masked"] = mask_token(data.token)
         if data.is_default is not None:
             updates["is_default"] = data.is_default
+
+        effective_provider = updates.get("provider", row["provider"])
+        effective_host = updates["provider_host"] if "provider_host" in updates else row.get("provider_host")
+        if effective_provider == "other" and not (effective_host or "").strip():
+            raise HTTPException(400, "provider_host is required when provider is 'other'")
 
         with DB_LOCK:
             if data.is_default is True:
