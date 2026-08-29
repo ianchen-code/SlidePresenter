@@ -1,6 +1,7 @@
 import base64
 import hashlib
 import json
+import mimetypes
 import os
 import secrets
 import shutil
@@ -19,14 +20,24 @@ import psycopg
 from psycopg.rows import dict_row
 import boto3
 from botocore.exceptions import ClientError
+from cryptography.fernet import Fernet, InvalidToken
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Body, Request, Response
-from fastapi.responses import FileResponse, StreamingResponse, RedirectResponse
+from fastapi.responses import FileResponse, StreamingResponse, RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.sessions import SessionMiddleware
 from authlib.integrations.starlette_client import OAuth
 
-from pipeline import run_pipeline, regenerate_slides
+from pipeline import (
+    run_pipeline,
+    regenerate_slides,
+    generate_title_description,
+    improve_title_description,
+    edit_slide_narration,
+    get_slide_narration,
+    list_models,
+)
 
 # ---------------------------------------------------------------------------
 # Configuration from Environment Variables
@@ -87,9 +98,14 @@ def get_s3_client():
     return boto3.client('s3', **kwargs)
 
 def upload_to_s3(local_path: str, s3_key: str) -> str:
-    """Upload a file to S3 and return the S3 key."""
+    """Upload a file to S3 and return the S3 key. boto3's upload_file()
+    doesn't set Content-Type on its own -- without it S3/MinIO serves
+    everything as binary/octet-stream, which browsers refuse to play
+    inline in a <video> tag even though the bytes are a valid MP4."""
+    content_type, _ = mimetypes.guess_type(local_path)
     s3 = get_s3_client()
-    s3.upload_file(local_path, S3_BUCKET, s3_key)
+    extra_args = {"ContentType": content_type} if content_type else {}
+    s3.upload_file(local_path, S3_BUCKET, s3_key, ExtraArgs=extra_args)
     return s3_key
 
 def download_from_s3(s3_key: str, local_path: str):
@@ -137,20 +153,17 @@ def get_or_create_secret_key() -> bytes:
         return key
 
 SECRET_KEY = get_or_create_secret_key()
+# Fernet (AES-128-CBC + HMAC-SHA256) needs a 32-byte urlsafe-base64 key.
+_fernet = Fernet(base64.urlsafe_b64encode(SECRET_KEY))
 
 def encrypt_token(token: str) -> str:
-    """Encrypt a token using XOR with the secret key and base64 encode."""
-    token_bytes = token.encode('utf-8')
-    key_extended = (SECRET_KEY * ((len(token_bytes) // len(SECRET_KEY)) + 1))[:len(token_bytes)]
-    encrypted = bytes(a ^ b for a, b in zip(token_bytes, key_extended))
-    return base64.b64encode(encrypted).decode('utf-8')
+    """Encrypt a token for storage."""
+    return _fernet.encrypt(token.encode('utf-8')).decode('utf-8')
 
 def decrypt_token(encrypted: str) -> str:
-    """Decrypt a token."""
-    encrypted_bytes = base64.b64decode(encrypted.encode('utf-8'))
-    key_extended = (SECRET_KEY * ((len(encrypted_bytes) // len(SECRET_KEY)) + 1))[:len(encrypted_bytes)]
-    decrypted = bytes(a ^ b for a, b in zip(encrypted_bytes, key_extended))
-    return decrypted.decode('utf-8')
+    """Decrypt a token. Raises InvalidToken if it was encrypted with a
+    different key (e.g. a token saved before the encryption scheme changed)."""
+    return _fernet.decrypt(encrypted.encode('utf-8')).decode('utf-8')
 
 def mask_token(token: str) -> str:
     """Mask a token for display, showing only first 7 and last 4 characters."""
@@ -203,6 +216,17 @@ def init_db():
         )
     """)
 
+    # Added after the initial release: rename/description and link-sharing.
+    cursor.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS title TEXT")
+    cursor.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS description TEXT")
+    cursor.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS share_token TEXT")
+    cursor.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS share_enabled BOOLEAN NOT NULL DEFAULT FALSE")
+    cursor.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS share_permission TEXT NOT NULL DEFAULT 'view'")
+    cursor.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS jobs_share_token_idx
+        ON jobs(share_token) WHERE share_token IS NOT NULL
+    """)
+
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS tokens (
             id TEXT PRIMARY KEY,
@@ -215,6 +239,9 @@ def init_db():
             last_used_at TIMESTAMP
         )
     """)
+    cursor.execute("ALTER TABLE tokens ADD COLUMN IF NOT EXISTS is_default BOOLEAN NOT NULL DEFAULT FALSE")
+    cursor.execute("ALTER TABLE tokens ADD COLUMN IF NOT EXISTS provider_host TEXT")
+    cursor.execute("ALTER TABLE tokens ADD COLUMN IF NOT EXISTS model TEXT")
 
     conn.commit()
     cursor.close()
@@ -225,6 +252,18 @@ try:
     init_db()
 except Exception as e:
     print(f"Warning: Could not initialize database: {e}")
+
+def iso_utc(dt) -> Optional[str]:
+    """Serialize a DB timestamp as ISO-8601 with an explicit UTC marker.
+    Postgres session timezone is UTC (see init_db), but these columns are
+    TIMESTAMP WITHOUT TIME ZONE, so psycopg hands back naive datetimes.
+    isoformat() on a naive datetime has no offset, and browsers interpret
+    that as *local* time (new Date('...')), silently shifting every
+    timestamp shown in the UI by the viewer's UTC offset. Appending 'Z'
+    tells the browser it's UTC so it converts to local time correctly."""
+    if not dt:
+        return None
+    return dt.isoformat() + "Z"
 
 def hash_api_key(api_key: str) -> str:
     """Hash the API key using SHA-256."""
@@ -247,7 +286,9 @@ def job_row_to_dict(row: dict) -> dict:
         "id": row["id"],
         "user_id": row.get("user_id"),
         "filename": row["filename"],
-        "created_at": row["created_at"].isoformat() if row["created_at"] else None,
+        "title": row.get("title"),
+        "description": row.get("description"),
+        "created_at": iso_utc(row["created_at"]),
         "status": row["status"],
         "stage": row["stage"],
         "current_slide": row["current_slide"],
@@ -259,6 +300,9 @@ def job_row_to_dict(row: dict) -> dict:
         "original_file_s3_key": row.get("original_file_s3_key"),
         "voice": row["voice"],
         "model": row["model"],
+        "share_enabled": row.get("share_enabled", False),
+        "share_permission": row.get("share_permission", "view"),
+        "share_token": row.get("share_token"),
     }
 
 # ---------------------------------------------------------------------------
@@ -275,6 +319,48 @@ def require_auth(request: Request) -> dict:
     if not user:
         raise HTTPException(401, "Not authenticated")
     return user
+
+def caller_id(request: Request) -> Optional[str]:
+    """The current caller's user id, or None for a guest/anonymous caller."""
+    user = get_current_user(request)
+    return user["id"] if user else None
+
+def _is_owner(job: dict, request: Request) -> bool:
+    return job.get("user_id") == caller_id(request)
+
+def _share_link_matches(job: dict, share_token: Optional[str]) -> bool:
+    return bool(share_token) and bool(job.get("share_enabled")) and share_token == job.get("share_token")
+
+def check_job_owner(job: dict, request: Request):
+    """Strict: owner (or guest bucket) only. A share link never satisfies
+    this -- used for delete and for changing share settings."""
+    if not _is_owner(job, request):
+        raise HTTPException(403, "Not authorized to access this job")
+
+def check_job_view_access(job: dict, request: Request, share_token: Optional[str] = None):
+    """Owner, or a valid share link (view or edit permission both grant viewing)."""
+    if _is_owner(job, request) or _share_link_matches(job, share_token):
+        return
+    raise HTTPException(403, "Not authorized to access this job")
+
+def check_job_edit_access(job: dict, request: Request, share_token: Optional[str] = None):
+    """Owner, or a valid share link with edit permission specifically."""
+    if _is_owner(job, request):
+        return
+    if _share_link_matches(job, share_token) and job.get("share_permission") == "edit":
+        return
+    raise HTTPException(403, "Not authorized to edit this job")
+
+INTERNAL_JOB_FIELDS = ("video_s3_key", "original_file_s3_key", "api_key_hash")
+
+def public_job_dict(job: dict, request: Request) -> dict:
+    """Job fields safe to return to the caller. share_token is only included
+    for the owner -- a share-link visitor already has the token in their URL,
+    but shouldn't be handed a token they weren't explicitly given."""
+    exclude = set(INTERNAL_JOB_FIELDS)
+    if not _is_owner(job, request):
+        exclude.add("share_token")
+    return {k: v for k, v in job.items() if k not in exclude}
 
 # ---------------------------------------------------------------------------
 # Database CRUD Operations
@@ -307,7 +393,7 @@ def create_job_record(
         "id": job_id,
         "user_id": user_id,
         "filename": filename,
-        "created_at": result["created_at"].isoformat() if result else None,
+        "created_at": iso_utc(result["created_at"]) if result else None,
         "status": "queued",
         "stage": "queued",
         "current_slide": 0,
@@ -342,13 +428,13 @@ def get_job_by_id(job_id: str) -> Optional[dict]:
     return None
 
 def get_all_jobs(user_id: Optional[str] = None) -> List[dict]:
-    """Get all jobs, optionally filtered by user, sorted by created_at descending."""
+    """Get jobs owned by user_id, or guest (ownerless) jobs if user_id is None."""
     with get_db() as conn:
         cursor = conn.cursor()
         if user_id:
             cursor.execute("SELECT * FROM jobs WHERE user_id = %s ORDER BY created_at DESC", (user_id,))
         else:
-            cursor.execute("SELECT * FROM jobs ORDER BY created_at DESC")
+            cursor.execute("SELECT * FROM jobs WHERE user_id IS NULL ORDER BY created_at DESC")
         rows = cursor.fetchall()
         return [job_row_to_dict(row) for row in rows]
 
@@ -371,13 +457,14 @@ async def auth_callback(request: Request):
         token = await oauth.google.authorize_access_token(request)
         print(f"Token received: {token}")
 
-        # Try to get user info from token or fetch it
+        # authorize_access_token() already verifies the id_token's signature
+        # and populates userinfo for OIDC-registered clients. If it's ever
+        # missing, fall back to a live call to Google's userinfo endpoint
+        # rather than locally decoding the id_token unverified -- that would
+        # let a forged/tampered token impersonate any user.
         user_info = token.get('userinfo')
-        if not user_info and 'id_token' in token:
-            # Parse the ID token
-            from authlib.jose import jwt
-            claims = jwt.decode(token['id_token'], claims_options={"verify_signature": False})
-            user_info = dict(claims)
+        if not user_info:
+            user_info = await oauth.google.userinfo(token=token)
 
         print(f"User info: {user_info}")
 
@@ -447,12 +534,14 @@ async def create_job(
     api_key: str = Form(...),
     voice: str = Form("en-US-ChristopherNeural"),
     model: str = Form(...),
+    provider: str = Form("anthropic"),
+    provider_host: Optional[str] = Form(None),
 ):
     if not file.filename.lower().endswith((".pdf", ".pptx")):
         raise HTTPException(400, "File must be a .pdf or .pptx")
 
-    user = get_current_user(request)
-    user_id = user["id"] if user else None
+    user = require_auth(request)
+    user_id = user["id"]
 
     job_id = str(uuid.uuid4())
     job_dir = os.path.join(DATA_DIR, job_id)
@@ -482,7 +571,7 @@ async def create_job(
     # Start background thread
     thread = threading.Thread(
         target=_run_job,
-        args=(job_id, upload_path, job_dir, api_key, voice, model),
+        args=(job_id, upload_path, job_dir, api_key, voice, model, provider, provider_host),
         daemon=True,
     )
     thread.start()
@@ -490,7 +579,7 @@ async def create_job(
     return {"job_id": job_id}
 
 
-def _run_job(job_id, upload_path, job_dir, api_key, voice, model):
+def _run_job(job_id, upload_path, job_dir, api_key, voice, model, provider="anthropic", provider_host=None):
     def progress_cb(stage, cur, total, msg):
         update_job(
             job_id,
@@ -503,14 +592,17 @@ def _run_job(job_id, upload_path, job_dir, api_key, voice, model):
 
     try:
         update_job(job_id, status="running", stage="starting", message="Starting pipeline")
-        final_path = run_pipeline(
+        result = run_pipeline(
             input_path=upload_path,
             job_dir=job_dir,
             api_key=api_key,
             voice=voice,
             model=model,
+            provider=provider,
+            provider_host=provider_host,
             progress_cb=progress_cb,
         )
+        final_path = result["video_path"]
 
         # Upload video to S3
         video_s3_key = f"jobs/{job_id}/video/final_presentation.mp4"
@@ -520,6 +612,15 @@ def _run_job(job_id, upload_path, job_dir, api_key, voice, model):
             print(f"S3 upload failed: {e}, video available locally")
             video_s3_key = None
 
+        # AI-suggested title/description, if that step succeeded and nothing
+        # else set them in the meantime (e.g. a very fast manual rename).
+        job_now = get_job_by_id(job_id)
+        extra_fields = {}
+        if result.get("title") and not (job_now and job_now.get("title")):
+            extra_fields["title"] = result["title"]
+        if result.get("description") and not (job_now and job_now.get("description")):
+            extra_fields["description"] = result["description"]
+
         update_job(
             job_id,
             status="done",
@@ -527,6 +628,7 @@ def _run_job(job_id, upload_path, job_dir, api_key, voice, model):
             message="Video ready",
             video_ready=True,
             video_s3_key=video_s3_key,
+            **extra_fields,
         )
     except Exception as e:
         traceback.print_exc()
@@ -535,31 +637,121 @@ def _run_job(job_id, upload_path, job_dir, api_key, voice, model):
 
 @app.get("/api/jobs")
 async def list_jobs(request: Request):
-    user = get_current_user(request)
-    user_id = user["id"] if user else None
-    jobs = get_all_jobs(user_id=user_id)
-    # Remove sensitive fields
-    return [
-        {k: v for k, v in job.items() if k not in ("video_s3_key", "original_file_s3_key", "api_key_hash")}
-        for job in jobs
-    ]
+    jobs = get_all_jobs(user_id=caller_id(request))
+    return [public_job_dict(job, request) for job in jobs]
 
 
 @app.get("/api/jobs/{job_id}")
-async def get_job(job_id: str):
+async def get_job(job_id: str, request: Request, share: Optional[str] = None):
     job = get_job_by_id(job_id)
     if not job:
         raise HTTPException(404, "Job not found")
-    # Don't leak internal paths or API key hash
-    public = {k: v for k, v in job.items() if k not in ("video_s3_key", "original_file_s3_key", "api_key_hash")}
-    return public
+    check_job_view_access(job, request, share)
+    result = public_job_dict(job, request)
+    result["is_owner"] = _is_owner(job, request)
+    result["can_edit"] = result["is_owner"] or (
+        _share_link_matches(job, share) and job.get("share_permission") == "edit"
+    )
+    return result
+
+
+class JobDetailsUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+
+@app.put("/api/jobs/{job_id}/details")
+async def update_job_details(job_id: str, data: JobDetailsUpdate, request: Request, share: Optional[str] = None):
+    """Rename / set description. Owner or an 'edit' share link."""
+    job = get_job_by_id(job_id)
+    if not job:
+        raise HTTPException(404, "Job not found")
+    check_job_edit_access(job, request, share)
+
+    updates = {}
+    if data.title is not None:
+        updates["title"] = data.title.strip() or None
+    if data.description is not None:
+        updates["description"] = data.description.strip() or None
+    if updates:
+        update_job(job_id, **updates)
+
+    return {"status": "updated"}
+
+
+class GenerateDetailsRequest(BaseModel):
+    api_key: str
+    action: str = "generate"  # "generate" | "improve"
+    current_title: Optional[str] = None
+    current_description: Optional[str] = None
+    provider: str = "anthropic"
+    provider_host: Optional[str] = None
+
+@app.post("/api/jobs/{job_id}/generate-details")
+async def generate_job_details(job_id: str, data: GenerateDetailsRequest, request: Request, share: Optional[str] = None):
+    """AI-suggest a title + description from the transcript, or improve the
+    caller's current draft of them. Returns the suggestion without saving it
+    -- the caller (Edit Details modal) still has to Save. Owner or an 'edit'
+    share link."""
+    job = get_job_by_id(job_id)
+    if not job:
+        raise HTTPException(404, "Job not found")
+    check_job_edit_access(job, request, share)
+
+    if data.action not in ("generate", "improve"):
+        raise HTTPException(400, "action must be 'generate' or 'improve'")
+
+    transcript_path = os.path.join(DATA_DIR, job_id, "transcript.json")
+    if not os.path.exists(transcript_path):
+        raise HTTPException(409, "Transcript not ready yet")
+    with open(transcript_path, "r", encoding="utf-8") as f:
+        transcript = json.load(f)
+
+    model = data.model or DEFAULT_MODEL_BY_PROVIDER.get(data.provider, "claude-sonnet-4-5")
+    try:
+        if data.action == "improve" and (data.current_title or data.current_description):
+            return improve_title_description(
+                data.current_title, data.current_description, transcript, data.api_key,
+                model=model, provider=data.provider, provider_host=data.provider_host,
+            )
+        return generate_title_description(
+            transcript, data.api_key, model=model, provider=data.provider, provider_host=data.provider_host,
+        )
+    except Exception as e:
+        raise HTTPException(502, f"AI auto-fill failed: {e}")
+
+
+class ShareSettings(BaseModel):
+    enabled: bool
+    permission: str = "view"  # "view" or "edit"
+
+@app.post("/api/jobs/{job_id}/share")
+async def update_job_share(job_id: str, data: ShareSettings, request: Request):
+    """Turn link-sharing on/off and choose view vs edit. Owner only --
+    a share link itself can never grant the ability to change sharing."""
+    job = get_job_by_id(job_id)
+    if not job:
+        raise HTTPException(404, "Job not found")
+    check_job_owner(job, request)
+
+    if data.permission not in ("view", "edit"):
+        raise HTTPException(400, "permission must be 'view' or 'edit'")
+
+    token = job.get("share_token")
+    updates = {"share_enabled": data.enabled, "share_permission": data.permission}
+    if data.enabled and not token:
+        token = secrets.token_urlsafe(24)
+        updates["share_token"] = token
+    update_job(job_id, **updates)
+
+    return {"share_enabled": data.enabled, "share_permission": data.permission, "share_token": token}
 
 
 @app.get("/api/jobs/{job_id}/video")
-async def get_job_video(job_id: str):
+async def get_job_video(job_id: str, request: Request, share: Optional[str] = None):
     job = get_job_by_id(job_id)
     if not job:
         raise HTTPException(404, "Job not found")
+    check_job_view_access(job, request, share)
     if not job.get("video_ready"):
         raise HTTPException(409, "Video not ready yet")
 
@@ -586,11 +778,7 @@ async def delete_job(job_id: str, request: Request):
     job = get_job_by_id(job_id)
     if not job:
         raise HTTPException(404, "Job not found")
-
-    # Check ownership if user is logged in
-    user = get_current_user(request)
-    if user and job.get("user_id") and job["user_id"] != user["id"]:
-        raise HTTPException(403, "Not authorized to delete this job")
+    check_job_owner(job, request)
 
     # Delete from S3
     if job.get("video_s3_key"):
@@ -621,10 +809,11 @@ async def delete_job(job_id: str, request: Request):
 
 
 @app.get("/api/jobs/{job_id}/transcript")
-async def get_job_transcript(job_id: str):
+async def get_job_transcript(job_id: str, request: Request, share: Optional[str] = None):
     job = get_job_by_id(job_id)
     if not job:
         raise HTTPException(404, "Job not found")
+    check_job_view_access(job, request, share)
 
     transcript_path = os.path.join(DATA_DIR, job_id, "transcript.json")
     if not os.path.exists(transcript_path):
@@ -632,6 +821,57 @@ async def get_job_transcript(job_id: str):
 
     with open(transcript_path, "r", encoding="utf-8") as f:
         return json.load(f)
+
+
+class SlideAiTextRequest(BaseModel):
+    api_key: str
+    action: str  # "regenerate" | "improve" | "custom"
+    current_text: Optional[str] = None  # required for improve/custom
+    prompt: Optional[str] = None  # required for custom
+    provider: str = "anthropic"
+    provider_host: Optional[str] = None
+
+@app.post("/api/jobs/{job_id}/slides/{slide_num}/ai-text")
+async def slide_ai_text(job_id: str, slide_num: int, data: SlideAiTextRequest, request: Request, share: Optional[str] = None):
+    """AI actions on one slide's narration text, from the per-slide spark
+    menu in the transcript editor. Returns the new text without saving it --
+    the caller applies it to the textarea, which is only persisted when the
+    user hits Regenerate. Owner or an 'edit' share link."""
+    job = get_job_by_id(job_id)
+    if not job:
+        raise HTTPException(404, "Job not found")
+    check_job_edit_access(job, request, share)
+
+    model = data.model or DEFAULT_MODEL_BY_PROVIDER.get(data.provider, "claude-sonnet-4-5")
+
+    if data.action == "regenerate":
+        image_path = os.path.join(DATA_DIR, job_id, "slides", f"slide_{slide_num:02d}.png")
+        if not os.path.exists(image_path):
+            raise HTTPException(404, "Slide image not found")
+        try:
+            return {"text": get_slide_narration(image_path, data.api_key, model=model, provider=data.provider, provider_host=data.provider_host)}
+        except Exception as e:
+            raise HTTPException(502, f"AI regeneration failed: {e}")
+
+    if data.action in ("improve", "custom"):
+        if not data.current_text:
+            raise HTTPException(400, "current_text is required")
+        if data.action == "custom" and not (data.prompt or "").strip():
+            raise HTTPException(400, "prompt is required for a custom edit")
+        try:
+            text = edit_slide_narration(
+                data.current_text,
+                data.api_key,
+                model=model,
+                instruction=data.prompt if data.action == "custom" else None,
+                provider=data.provider,
+                provider_host=data.provider_host,
+            )
+            return {"text": text}
+        except Exception as e:
+            raise HTTPException(502, f"AI edit failed: {e}")
+
+    raise HTTPException(400, "action must be 'regenerate', 'improve', or 'custom'")
 
 
 # ---------------------------------------------------------------------------
@@ -647,10 +887,11 @@ class RegenerateRequest(BaseModel):
     api_key: str
 
 @app.post("/api/jobs/{job_id}/regenerate")
-async def regenerate_job_slides(job_id: str, request: RegenerateRequest):
+async def regenerate_job_slides(job_id: str, body: RegenerateRequest, request: Request, share: Optional[str] = None):
     job = get_job_by_id(job_id)
     if not job:
         raise HTTPException(404, "Job not found")
+    check_job_edit_access(job, request, share)
     if not job.get("video_ready"):
         raise HTTPException(409, "Cannot regenerate: original video not ready")
 
@@ -662,12 +903,12 @@ async def regenerate_job_slides(job_id: str, request: RegenerateRequest):
     # Start background thread for regeneration
     thread = threading.Thread(
         target=_regenerate_job,
-        args=(job_id, job_dir, request.changes, request.api_key, job["voice"]),
+        args=(job_id, job_dir, body.changes, body.api_key, job["voice"]),
         daemon=True,
     )
     thread.start()
 
-    return {"status": "regenerating", "slides": [c.slide for c in request.changes]}
+    return {"status": "regenerating", "slides": [c.slide for c in body.changes]}
 
 
 def _regenerate_job(job_id: str, job_dir: str, changes: List[SlideChange], api_key: str, voice: str):
@@ -716,65 +957,149 @@ def _regenerate_job(job_id: str, job_dir: str, changes: List[SlideChange], api_k
 # Token Management Endpoints
 # ---------------------------------------------------------------------------
 
+VALID_PROVIDERS = ("anthropic", "openai", "gemini", "other")
+DEFAULT_MODEL_BY_PROVIDER = {
+    "anthropic": "claude-sonnet-4-5",
+    "openai": "gpt-4o",
+    "gemini": "gemini-2.5-flash",
+    "other": "claude-sonnet-4-5",
+}
+
 class TokenCreate(BaseModel):
     name: str
     token: str
     provider: str = "anthropic"
+    provider_host: Optional[str] = None  # required when provider == "other"
+    model: Optional[str] = None
+    is_default: bool = False
 
 class TokenUpdate(BaseModel):
     name: Optional[str] = None
     token: Optional[str] = None
     provider: Optional[str] = None
+    provider_host: Optional[str] = None
+    model: Optional[str] = None
+    is_default: Optional[bool] = None
+
+def _token_dict(row: dict) -> dict:
+    return {
+        "id": row["id"],
+        "name": row["name"],
+        "provider": row["provider"],
+        "provider_host": row.get("provider_host"),
+        "model": row.get("model") or DEFAULT_MODEL_BY_PROVIDER.get(row["provider"], "claude-sonnet-4-5"),
+        "token_masked": row["token_masked"],
+        "is_default": row["is_default"],
+        "created_at": iso_utc(row["created_at"]),
+        "last_used_at": iso_utc(row["last_used_at"]),
+    }
+
+class TestConnectionRequest(BaseModel):
+    provider: str
+    provider_host: Optional[str] = None
+    api_key: str
+
+@app.post("/api/tokens/test-connection")
+async def test_token_connection(data: TestConnectionRequest, request: Request):
+    """Validate a token before it's saved by listing its provider's
+    available models -- a successful call proves the key actually works.
+    Also backs the Fetch Models button in Manage Tokens."""
+    require_auth(request)
+    if data.provider not in VALID_PROVIDERS:
+        raise HTTPException(400, f"provider must be one of {VALID_PROVIDERS}")
+    if data.provider == "other" and not (data.provider_host or "").strip():
+        raise HTTPException(400, "provider_host is required when provider is 'other'")
+    try:
+        models = list_models(data.api_key, data.provider, data.provider_host)
+    except Exception as e:
+        raise HTTPException(400, f"Connection test failed: {e}")
+    return {"ok": True, "models": models}
 
 @app.get("/api/tokens")
 async def list_tokens(request: Request):
     """List all saved tokens (masked)."""
-    user = get_current_user(request)
-    user_id = user["id"] if user else None
-
     with get_db() as conn:
         cursor = conn.cursor()
-        if user_id:
-            cursor.execute("""
-                SELECT id, name, provider, token_masked, created_at, last_used_at
-                FROM tokens WHERE user_id = %s ORDER BY created_at DESC
-            """, (user_id,))
-        else:
-            cursor.execute("""
-                SELECT id, name, provider, token_masked, created_at, last_used_at
-                FROM tokens WHERE user_id IS NULL ORDER BY created_at DESC
-            """)
-        rows = cursor.fetchall()
-        return [
-            {
-                "id": row["id"],
-                "name": row["name"],
+        cursor.execute("""
+            SELECT id, name, provider, provider_host, model, token_masked, is_default, created_at, last_used_at
+            FROM tokens WHERE user_id IS NOT DISTINCT FROM %s ORDER BY created_at DESC
+        """, (caller_id(request),))
+        return [_token_dict(row) for row in cursor.fetchall()]
+
+# Registered before /api/tokens/{token_id} so "default" isn't captured as an id.
+@app.get("/api/tokens/default")
+async def get_default_token(request: Request):
+    """The caller's default token (masked), or null if none is set."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT id, name, provider, provider_host, model, token_masked, is_default, created_at, last_used_at
+            FROM tokens WHERE user_id IS NOT DISTINCT FROM %s AND is_default = TRUE
+        """, (caller_id(request),))
+        row = cursor.fetchone()
+        return _token_dict(row) if row else None
+
+@app.get("/api/tokens/default/decrypt")
+async def get_default_token_decrypted(request: Request):
+    """The caller's default token, decrypted -- plus which provider/host it's
+    for, so every AI action call site knows which API to hit. Used by every
+    AI action in the app so no page needs its own token picker."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT id, token_encrypted, provider, provider_host, model FROM tokens
+            WHERE user_id IS NOT DISTINCT FROM %s AND is_default = TRUE
+        """, (caller_id(request),))
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(404, "No default API token set. Add one in Manage Tokens.")
+
+        with DB_LOCK:
+            cursor.execute("UPDATE tokens SET last_used_at = CURRENT_TIMESTAMP WHERE id = %s", (row["id"],))
+            conn.commit()
+
+        try:
+            return {
+                "token": decrypt_token(row["token_encrypted"]),
                 "provider": row["provider"],
-                "token_masked": row["token_masked"],
-                "created_at": row["created_at"].isoformat() if row["created_at"] else None,
-                "last_used_at": row["last_used_at"].isoformat() if row["last_used_at"] else None,
+                "provider_host": row["provider_host"],
+                "model": row["model"] or DEFAULT_MODEL_BY_PROVIDER.get(row["provider"], "claude-sonnet-4-5"),
             }
-            for row in rows
-        ]
+        except InvalidToken:
+            raise HTTPException(400, "Your default token was saved with a previous encryption scheme. Please delete and re-add it.")
 
 @app.post("/api/tokens")
 async def create_token(request: Request, data: TokenCreate):
-    """Create a new token."""
-    user = get_current_user(request)
-    user_id = user["id"] if user else None
+    """Create a new token. The first token a user ever saves automatically
+    becomes their default; later ones only become default if requested."""
+    if data.provider not in VALID_PROVIDERS:
+        raise HTTPException(400, f"provider must be one of {VALID_PROVIDERS}")
+    if data.provider == "other" and not (data.provider_host or "").strip():
+        raise HTTPException(400, "provider_host is required when provider is 'other'")
 
+    user = require_auth(request)
+    user_id = user["id"]
     token_id = str(uuid.uuid4())
     token_encrypted = encrypt_token(data.token)
     token_masked = mask_token(data.token)
+    provider_host = data.provider_host.strip() if data.provider == "other" and data.provider_host else None
+    model = (data.model or "").strip() or DEFAULT_MODEL_BY_PROVIDER.get(data.provider, "claude-sonnet-4-5")
 
     with DB_LOCK:
         with get_db() as conn:
             cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) AS c FROM tokens WHERE user_id IS NOT DISTINCT FROM %s", (user_id,))
+            is_first = cursor.fetchone()["c"] == 0
+            make_default = data.is_default or is_first
+
+            if make_default:
+                cursor.execute("UPDATE tokens SET is_default = FALSE WHERE user_id IS NOT DISTINCT FROM %s", (user_id,))
+
             cursor.execute("""
-                INSERT INTO tokens (id, user_id, name, provider, token_encrypted, token_masked)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                INSERT INTO tokens (id, user_id, name, provider, provider_host, model, token_encrypted, token_masked, is_default)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING created_at
-            """, (token_id, user_id, data.name, data.provider, token_encrypted, token_masked))
+            """, (token_id, user_id, data.name, data.provider, provider_host, model, token_encrypted, token_masked, make_default))
             result = cursor.fetchone()
             conn.commit()
 
@@ -782,37 +1107,36 @@ async def create_token(request: Request, data: TokenCreate):
         "id": token_id,
         "name": data.name,
         "provider": data.provider,
+        "provider_host": provider_host,
+        "model": model,
         "token_masked": token_masked,
-        "created_at": result["created_at"].isoformat() if result else None,
+        "is_default": make_default,
+        "created_at": iso_utc(result["created_at"]) if result else None,
     }
 
 @app.get("/api/tokens/{token_id}")
-async def get_token(token_id: str):
-    """Get a token by ID (masked)."""
+async def get_token(token_id: str, request: Request):
+    """Get a token by ID (masked). Scoped to the caller, same as the list endpoint."""
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT id, name, provider, token_masked, created_at, last_used_at
-            FROM tokens WHERE id = %s
-        """, (token_id,))
+            SELECT id, name, provider, provider_host, model, token_masked, is_default, created_at, last_used_at
+            FROM tokens WHERE id = %s AND user_id IS NOT DISTINCT FROM %s
+        """, (token_id, caller_id(request)))
         row = cursor.fetchone()
         if not row:
             raise HTTPException(404, "Token not found")
-        return {
-            "id": row["id"],
-            "name": row["name"],
-            "provider": row["provider"],
-            "token_masked": row["token_masked"],
-            "created_at": row["created_at"].isoformat() if row["created_at"] else None,
-            "last_used_at": row["last_used_at"].isoformat() if row["last_used_at"] else None,
-        }
+        return _token_dict(row)
 
 @app.get("/api/tokens/{token_id}/decrypt")
-async def get_decrypted_token(token_id: str):
-    """Get the decrypted token value (for internal use)."""
+async def get_decrypted_token(token_id: str, request: Request):
+    """Get the decrypted token value (for internal use). Scoped to the caller."""
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT token_encrypted FROM tokens WHERE id = %s", (token_id,))
+        cursor.execute(
+            "SELECT token_encrypted, provider, provider_host, model FROM tokens WHERE id = %s AND user_id IS NOT DISTINCT FROM %s",
+            (token_id, caller_id(request)),
+        )
         row = cursor.fetchone()
         if not row:
             raise HTTPException(404, "Token not found")
@@ -825,14 +1149,30 @@ async def get_decrypted_token(token_id: str):
             )
             conn.commit()
 
-        return {"token": decrypt_token(row["token_encrypted"])}
+        try:
+            return {
+                "token": decrypt_token(row["token_encrypted"]),
+                "provider": row["provider"],
+                "provider_host": row["provider_host"],
+                "model": row["model"] or DEFAULT_MODEL_BY_PROVIDER.get(row["provider"], "claude-sonnet-4-5"),
+            }
+        except InvalidToken:
+            raise HTTPException(400, "This token was saved with a previous encryption scheme. Please delete and re-add it.")
 
 @app.put("/api/tokens/{token_id}")
-async def update_token(token_id: str, data: TokenUpdate):
-    """Update a token."""
+async def update_token(token_id: str, data: TokenUpdate, request: Request):
+    """Update a token. Scoped to the caller. Setting is_default=true demotes
+    whichever other token was previously the default."""
+    if data.provider is not None and data.provider not in VALID_PROVIDERS:
+        raise HTTPException(400, f"provider must be one of {VALID_PROVIDERS}")
+
+    user_id = caller_id(request)
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM tokens WHERE id = %s", (token_id,))
+        cursor.execute(
+            "SELECT * FROM tokens WHERE id = %s AND user_id IS NOT DISTINCT FROM %s",
+            (token_id, user_id),
+        )
         row = cursor.fetchone()
         if not row:
             raise HTTPException(404, "Token not found")
@@ -842,28 +1182,60 @@ async def update_token(token_id: str, data: TokenUpdate):
             updates["name"] = data.name
         if data.provider is not None:
             updates["provider"] = data.provider
+            if data.provider != "other":
+                updates["provider_host"] = None  # meaningless for anthropic/openai
+        if data.provider_host is not None:
+            updates["provider_host"] = data.provider_host.strip() or None
+        if data.model is not None:
+            updates["model"] = data.model.strip() or None
         if data.token is not None:
             updates["token_encrypted"] = encrypt_token(data.token)
             updates["token_masked"] = mask_token(data.token)
+        if data.is_default is not None:
+            updates["is_default"] = data.is_default
 
-        if updates:
-            set_clause = ", ".join(f"{k} = %s" for k in updates.keys())
-            values = list(updates.values()) + [token_id]
-            with DB_LOCK:
+        effective_provider = updates.get("provider", row["provider"])
+        effective_host = updates["provider_host"] if "provider_host" in updates else row.get("provider_host")
+        if effective_provider == "other" and not (effective_host or "").strip():
+            raise HTTPException(400, "provider_host is required when provider is 'other'")
+
+        with DB_LOCK:
+            if data.is_default is True:
+                cursor.execute(
+                    "UPDATE tokens SET is_default = FALSE WHERE user_id IS NOT DISTINCT FROM %s AND id != %s",
+                    (user_id, token_id),
+                )
+            if updates:
+                set_clause = ", ".join(f"{k} = %s" for k in updates.keys())
+                values = list(updates.values()) + [token_id]
                 cursor.execute(f"UPDATE tokens SET {set_clause} WHERE id = %s", values)
-                conn.commit()
+            conn.commit()
 
     return {"status": "updated"}
 
 @app.delete("/api/tokens/{token_id}")
-async def delete_token(token_id: str):
-    """Delete a token."""
+async def delete_token(token_id: str, request: Request):
+    """Delete a token. Scoped to the caller. If it was the default, promotes
+    the most recently created remaining token so a default always exists."""
+    user_id = caller_id(request)
     with DB_LOCK:
         with get_db() as conn:
             cursor = conn.cursor()
-            cursor.execute("DELETE FROM tokens WHERE id = %s", (token_id,))
-            if cursor.rowcount == 0:
+            cursor.execute(
+                "DELETE FROM tokens WHERE id = %s AND user_id IS NOT DISTINCT FROM %s RETURNING is_default",
+                (token_id, user_id),
+            )
+            deleted = cursor.fetchone()
+            if not deleted:
                 raise HTTPException(404, "Token not found")
+
+            if deleted["is_default"]:
+                cursor.execute("""
+                    UPDATE tokens SET is_default = TRUE WHERE id = (
+                        SELECT id FROM tokens WHERE user_id IS NOT DISTINCT FROM %s
+                        ORDER BY created_at DESC LIMIT 1
+                    )
+                """, (user_id,))
             conn.commit()
     return {"status": "deleted"}
 
@@ -872,20 +1244,57 @@ async def delete_token(token_id: str):
 # Frontend Routes
 # ---------------------------------------------------------------------------
 
+@app.get("/")
+async def get_home_page(request: Request):
+    """Sign-in is required for the whole app. A share link is the one
+    exception (handled on /slide/{job_id} below), so the home page never
+    needs to expose guest/anonymous jobs to browse."""
+    if not get_current_user(request):
+        return RedirectResponse(url="/login", status_code=302)
+    return FileResponse(os.path.join(FRONTEND_DIR, "index.html"), media_type="text/html")
+
 @app.get("/slide/{job_id}")
-async def get_slide_page(job_id: str):
+async def get_slide_page(job_id: str, request: Request, share: Optional[str] = None):
+    if not get_current_user(request):
+        job = get_job_by_id(job_id)
+        if not (job and _share_link_matches(job, share)):
+            return RedirectResponse(url="/login", status_code=302)
     slide_page = os.path.join(FRONTEND_DIR, "slide.html")
     return FileResponse(slide_page, media_type="text/html")
 
 @app.get("/token")
-async def get_token_page():
+async def get_token_page(request: Request):
+    if not get_current_user(request):
+        return RedirectResponse(url="/login", status_code=302)
     token_page = os.path.join(FRONTEND_DIR, "token.html")
     return FileResponse(token_page, media_type="text/html")
 
 @app.get("/login")
-async def get_login_page():
+async def get_login_page(request: Request):
+    if get_current_user(request):
+        return RedirectResponse(url="/", status_code=302)
     login_page = os.path.join(FRONTEND_DIR, "login.html")
     return FileResponse(login_page, media_type="text/html")
+
+
+# ---------------------------------------------------------------------------
+# Error Pages
+# ---------------------------------------------------------------------------
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    if request.url.path.startswith("/api/"):
+        return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
+    if exc.status_code == 404:
+        return FileResponse(os.path.join(FRONTEND_DIR, "error-404.html"), status_code=404)
+    return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    traceback.print_exc()
+    if request.url.path.startswith("/api/"):
+        return JSONResponse({"detail": "Internal server error"}, status_code=500)
+    return FileResponse(os.path.join(FRONTEND_DIR, "error-500.html"), status_code=500)
 
 
 # Serve the simple frontend

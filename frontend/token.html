@@ -3,14 +3,17 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Token Management</title>
+  <title>Manage Tokens - Slide Presenter</title>
+  <link rel="stylesheet" href="/transitions.css">
+  <script src="/ui-transitions.js"></script>
+  <script src="/toast.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
       theme: {
         extend: {
           colors: {
-            accent: '#d97757',
+            accent: '#b35d3f',
             bg: '#faf9f6',
             ink: '#1f1c19',
             line: '#e5e0d8',
@@ -24,7 +27,7 @@
   <a href="/" class="text-accent no-underline font-semibold mb-4 inline-block hover:underline">&larr; All slides</a>
 
   <header class="flex justify-between items-center mb-8">
-    <h1 class="text-2xl font-semibold">API Tokens</h1>
+    <h1 class="text-2xl font-semibold">Manage Tokens</h1>
     <div class="flex gap-3 items-center">
       <button class="bg-accent text-white border-none rounded-lg px-4 py-2.5 text-sm font-semibold cursor-pointer hover:opacity-90" id="addTokenBtn">+ Add Token</button>
 
@@ -32,14 +35,15 @@
       <div id="authContainer" class="flex items-center gap-2 ml-2">
         <a id="loginBtn" href="/login" class="hidden text-stone-600 font-semibold text-sm hover:text-accent">Sign in</a>
         <div id="userMenu" class="hidden relative">
-          <button id="userMenuBtn" class="flex items-center gap-2 text-sm">
+          <button id="userMenuBtn" type="button" class="flex items-center gap-2 text-sm" aria-label="User menu" aria-haspopup="true">
             <img id="userAvatar" src="" alt="" class="w-8 h-8 rounded-full border border-line">
           </button>
-          <div id="userDropdown" class="hidden absolute right-0 mt-2 w-48 bg-white border border-line rounded-lg shadow-lg py-1 z-50">
-            <div class="px-4 py-2 border-b border-line">
-              <p id="userName" class="text-sm font-medium text-stone-700 truncate"></p>
+          <div id="userDropdown" class="hidden absolute right-0 mt-2 w-56 bg-white border border-line rounded-lg shadow-lg py-1 z-50 transition-all duration-150 origin-top-right opacity-0 scale-95">
+            <div class="px-4 py-3 border-b border-line">
+              <p id="userName" class="text-sm font-semibold text-ink truncate"></p>
               <p id="userEmail" class="text-xs text-stone-500 truncate"></p>
             </div>
+            <a href="/token" class="block px-4 py-2 text-sm text-stone-600 hover:bg-stone-50">Manage Tokens</a>
             <a href="/auth/logout" class="block px-4 py-2 text-sm text-stone-600 hover:bg-stone-50">Sign out</a>
           </div>
         </div>
@@ -55,11 +59,11 @@
   </div>
 
   <!-- Add/Edit Token Modal -->
-  <div class="hidden fixed inset-0 bg-black/40 z-50 items-center justify-center" id="tokenModal">
-    <div class="bg-white rounded-xl w-full max-w-md mx-5 shadow-2xl">
+  <div class="hidden fixed inset-0 bg-black/40 z-50 items-center justify-center transition-opacity duration-200 opacity-0" id="tokenModal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="bg-white rounded-xl w-full max-w-md mx-5 shadow-2xl transition-all duration-200 scale-95 opacity-0">
       <div class="px-6 py-5 border-b border-line flex justify-between items-center">
         <h2 id="modalTitle" class="text-lg font-semibold m-0">Add Token</h2>
-        <button class="bg-transparent border-none text-2xl cursor-pointer text-stone-500 hover:text-ink leading-none" id="modalClose">&times;</button>
+        <button type="button" class="bg-transparent border-none cursor-pointer text-stone-500 hover:text-ink p-1 -m-1 rounded" id="modalClose" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
       </div>
       <div class="p-6">
         <div class="mb-4">
@@ -72,15 +76,41 @@
           <select id="tokenProvider" class="w-full px-3 py-2.5 border border-line rounded-lg text-sm bg-white">
             <option value="anthropic">Anthropic</option>
             <option value="openai">OpenAI</option>
-            <option value="google">Google</option>
-            <option value="other">Other</option>
+            <option value="gemini">Google Gemini</option>
+            <option value="other">Other (custom endpoint)</option>
           </select>
+        </div>
+        <div class="mb-4 hidden" id="tokenProviderHostRow">
+          <label for="tokenProviderHost" class="text-sm font-semibold text-stone-600 block mb-2">API Endpoint URL</label>
+          <input type="text" id="tokenProviderHost" placeholder="https://your-proxy.example.com/v1/chat/completions" class="w-full px-3 py-2.5 border border-line rounded-lg text-sm bg-white">
+          <p class="text-xs text-stone-500 mt-1.5">Full URL of an OpenAI-compatible chat completions endpoint</p>
+        </div>
+        <div class="mb-4">
+          <div class="flex justify-between items-center mb-2">
+            <label for="tokenModel" class="text-sm font-semibold text-stone-600">Model</label>
+            <button type="button" id="fetchModelsBtn" class="flex items-center gap-1 text-xs text-accent hover:underline font-semibold">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                <path d="M3 3v5h5" />
+                <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
+                <path d="M16 16h5v5" />
+              </svg>
+              <span id="fetchModelsBtnLabel">Fetch models</span>
+            </button>
+          </div>
+          <input type="text" id="tokenModel" list="modelSuggestions" placeholder="claude-sonnet-4-5" class="w-full px-3 py-2.5 border border-line rounded-lg text-sm bg-white">
+          <datalist id="modelSuggestions"></datalist>
+          <p class="text-xs text-stone-500 mt-1.5">Used for narration and every AI action with this token. Enter your API token below, then "Fetch models" to list what's actually available.</p>
         </div>
         <div class="mb-4">
           <label for="tokenValue" class="text-sm font-semibold text-stone-600 block mb-2">API Token</label>
           <input type="password" id="tokenValue" placeholder="sk-ant-..." class="w-full px-3 py-2.5 border border-line rounded-lg text-sm bg-white">
           <p class="text-xs text-stone-500 mt-1.5">Your token is encrypted before storage</p>
         </div>
+        <label class="flex items-center gap-2 cursor-pointer">
+          <input type="checkbox" id="tokenIsDefault" class="w-4 h-4 accent-accent cursor-pointer">
+          <span class="text-sm text-stone-600">Set as default <span class="text-stone-400">(used for every AI action in the app)</span></span>
+        </label>
       </div>
       <div class="px-6 py-4 border-t border-line flex justify-end gap-3">
         <button class="bg-transparent text-ink border border-line rounded-lg px-4 py-2.5 text-sm font-semibold cursor-pointer hover:bg-stone-100" id="cancelBtn">Cancel</button>
@@ -90,11 +120,11 @@
   </div>
 
   <!-- Delete Confirmation Modal -->
-  <div class="hidden fixed inset-0 bg-black/40 z-50 items-center justify-center" id="deleteModal">
-    <div class="bg-white rounded-xl w-full max-w-md mx-5 shadow-2xl">
+  <div class="hidden fixed inset-0 bg-black/40 z-50 items-center justify-center transition-opacity duration-200 opacity-0" id="deleteModal" role="dialog" aria-modal="true" aria-labelledby="deleteModalTitle">
+    <div class="bg-white rounded-xl w-full max-w-md mx-5 shadow-2xl transition-all duration-200 scale-95 opacity-0">
       <div class="px-6 py-5 border-b border-line flex justify-between items-center">
-        <h2 class="text-lg font-semibold m-0">Delete Token</h2>
-        <button class="bg-transparent border-none text-2xl cursor-pointer text-stone-500 hover:text-ink leading-none" id="deleteModalClose">&times;</button>
+        <h2 id="deleteModalTitle" class="text-lg font-semibold m-0">Delete Token</h2>
+        <button type="button" class="bg-transparent border-none cursor-pointer text-stone-500 hover:text-ink p-1 -m-1 rounded" id="deleteModalClose" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
       </div>
       <div class="p-6">
         <p>Are you sure you want to delete "<strong id="deleteTokenName"></strong>"? This action cannot be undone.</p>
@@ -123,7 +153,73 @@
     const modalClose = document.getElementById('modalClose');
     const tokenName = document.getElementById('tokenName');
     const tokenProvider = document.getElementById('tokenProvider');
+    const tokenProviderHostRow = document.getElementById('tokenProviderHostRow');
+    const tokenProviderHost = document.getElementById('tokenProviderHost');
+    const tokenModel = document.getElementById('tokenModel');
+    const modelSuggestions = document.getElementById('modelSuggestions');
+    const fetchModelsBtn = document.getElementById('fetchModelsBtn');
+    const fetchModelsBtnLabel = document.getElementById('fetchModelsBtnLabel');
     const tokenValue = document.getElementById('tokenValue');
+    const tokenIsDefault = document.getElementById('tokenIsDefault');
+
+    // Also doubles as the pre-save connectivity/auth check -- a successful
+    // call proves the key actually works before Manage Tokens will save it.
+    async function testConnection(provider, providerHost, apiKey) {
+      const res = await fetch('/api/tokens/test-connection', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider, provider_host: provider === 'other' ? providerHost : null, api_key: apiKey })
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.detail || 'Connection test failed');
+      }
+      return res.json(); // { ok, models }
+    }
+
+    fetchModelsBtn.addEventListener('click', async () => {
+      const apiKey = tokenValue.value.trim();
+      if (!apiKey) {
+        showToast('Enter an API token first', { type: 'error' });
+        return;
+      }
+      if (tokenProvider.value === 'other' && !tokenProviderHost.value.trim()) {
+        showToast('Enter the API endpoint URL first', { type: 'error' });
+        return;
+      }
+
+      fetchModelsBtn.disabled = true;
+      fetchModelsBtnLabel.textContent = 'Fetching...';
+      try {
+        const { models } = await testConnection(tokenProvider.value, tokenProviderHost.value.trim(), apiKey);
+        modelSuggestions.innerHTML = models.map(m => `<option value="${m.replace(/"/g, '&quot;')}"></option>`).join('');
+        showToast(`Connected — ${models.length} model(s) found`, { type: 'success' });
+      } catch (err) {
+        showToast(err.message, { type: 'error' });
+      } finally {
+        fetchModelsBtn.disabled = false;
+        fetchModelsBtnLabel.textContent = 'Fetch models';
+      }
+    });
+
+    const DEFAULT_MODEL_BY_PROVIDER = {
+      anthropic: 'claude-sonnet-4-5',
+      openai: 'gpt-4o',
+      gemini: 'gemini-2.5-flash',
+      other: 'claude-sonnet-4-5',
+    };
+
+    function updateProviderHostVisibility() {
+      tokenProviderHostRow.classList.toggle('hidden', tokenProvider.value !== 'other');
+    }
+    tokenProvider.addEventListener('change', () => {
+      updateProviderHostVisibility();
+      // Only overwrite the model field if it's empty or still shows some
+      // provider's default -- never clobber a value the user typed in.
+      if (!tokenModel.value.trim() || Object.values(DEFAULT_MODEL_BY_PROVIDER).includes(tokenModel.value.trim())) {
+        tokenModel.value = DEFAULT_MODEL_BY_PROVIDER[tokenProvider.value] || '';
+      }
+    });
     const cancelBtn = document.getElementById('cancelBtn');
     const saveBtn = document.getElementById('saveBtn');
 
@@ -158,19 +254,29 @@
           const lastUsed = token.last_used_at
             ? new Date(token.last_used_at).toLocaleDateString()
             : 'Never';
+          const defaultBadge = token.is_default
+            ? `<span class="inline-block px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700 ml-2">Default</span>`
+            : '';
+          const setDefaultBtn = token.is_default
+            ? ''
+            : `<button class="bg-transparent text-accent border border-accent rounded-lg px-3 py-1.5 text-sm font-semibold cursor-pointer hover:bg-accent hover:text-white set-default-btn" data-id="${token.id}">Set as default</button>`;
           return `
-            <div class="bg-white border border-line rounded-xl px-5 py-4 flex justify-between items-center" data-id="${token.id}">
+            <div class="bg-white border ${token.is_default ? 'border-accent' : 'border-line'} rounded-xl px-5 py-4 flex justify-between items-center" data-id="${token.id}">
               <div class="flex-1 min-w-0">
                 <div class="font-semibold text-base mb-1">
                   ${escapeHtml(token.name)}
                   <span class="inline-block px-2 py-0.5 rounded-full text-xs font-semibold uppercase bg-indigo-100 text-indigo-800 ml-2">${escapeHtml(token.provider)}</span>
+                  ${defaultBadge}
                 </div>
                 <div class="text-sm text-stone-500">
                   <span class="font-mono text-xs bg-stone-100 px-1.5 py-0.5 rounded">${escapeHtml(token.token_masked)}</span>
+                  <span class="font-mono text-xs bg-stone-100 px-1.5 py-0.5 rounded ml-1">${escapeHtml(token.model)}</span>
                   &bull; Added ${dateStr} &bull; Last used: ${lastUsed}
+                  ${token.provider === 'other' && token.provider_host ? `<br><span class="font-mono text-xs text-stone-400">${escapeHtml(token.provider_host)}</span>` : ''}
                 </div>
               </div>
               <div class="flex gap-2">
+                ${setDefaultBtn}
                 <button class="bg-transparent text-ink border border-line rounded-lg px-3 py-1.5 text-sm font-semibold cursor-pointer hover:bg-stone-100 edit-btn" data-id="${token.id}">Edit</button>
                 <button class="bg-red-500 text-white border-none rounded-lg px-3 py-1.5 text-sm font-semibold cursor-pointer hover:opacity-90 delete-btn" data-id="${token.id}" data-name="${escapeHtml(token.name)}">Delete</button>
               </div>
@@ -185,15 +291,23 @@
         document.querySelectorAll('.delete-btn').forEach(btn => {
           btn.addEventListener('click', () => openDeleteModal(btn.dataset.id, btn.dataset.name));
         });
+        document.querySelectorAll('.set-default-btn').forEach(btn => {
+          btn.addEventListener('click', () => setDefaultToken(btn.dataset.id));
+        });
       } catch (err) {
         console.error('Failed to load tokens:', err);
       }
     }
 
     function escapeHtml(text) {
-      const div = document.createElement('div');
-      div.textContent = text;
-      return div.innerHTML;
+      // Escapes quotes too (not just & < >) so this is also safe to drop
+      // into an HTML attribute value, not just text content.
+      return String(text)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
     }
 
     // Add token modal
@@ -202,11 +316,14 @@
       modalTitle.textContent = 'Add Token';
       tokenName.value = '';
       tokenProvider.value = 'anthropic';
+      tokenProviderHost.value = '';
+      tokenModel.value = DEFAULT_MODEL_BY_PROVIDER.anthropic;
       tokenValue.value = '';
       tokenValue.placeholder = 'sk-ant-...';
+      tokenIsDefault.checked = false;
+      updateProviderHostVisibility();
       saveBtn.textContent = 'Save Token';
-      tokenModal.classList.remove('hidden');
-      tokenModal.classList.add('flex');
+      openDialog(tokenModal);
     }
 
     // Edit token modal
@@ -219,44 +336,72 @@
         modalTitle.textContent = 'Edit Token';
         tokenName.value = token.name;
         tokenProvider.value = token.provider;
+        tokenProviderHost.value = token.provider_host || '';
+        tokenModel.value = token.model || DEFAULT_MODEL_BY_PROVIDER[token.provider] || '';
         tokenValue.value = '';
         tokenValue.placeholder = 'Leave blank to keep current token';
+        tokenIsDefault.checked = !!token.is_default;
+        updateProviderHostVisibility();
         saveBtn.textContent = 'Update Token';
-        tokenModal.classList.remove('hidden');
-        tokenModal.classList.add('flex');
+        openDialog(tokenModal);
       } catch (err) {
-        alert('Failed to load token: ' + err.message);
+        showToast('Failed to load token: ' + err.message, { type: 'error' });
       }
     }
 
     function closeTokenModal() {
-      tokenModal.classList.add('hidden');
-      tokenModal.classList.remove('flex');
+      closeDialog(tokenModal);
       editingTokenId = null;
     }
 
     async function saveToken() {
       const name = tokenName.value.trim();
       const provider = tokenProvider.value;
+      const providerHost = tokenProviderHost.value.trim();
+      const model = tokenModel.value.trim();
       const token = tokenValue.value.trim();
 
       if (!name) {
-        alert('Please enter a name');
+        showToast('Please enter a name', { type: 'error' });
         return;
       }
 
       if (!editingTokenId && !token) {
-        alert('Please enter an API token');
+        showToast('Please enter an API token', { type: 'error' });
+        return;
+      }
+
+      if (provider === 'other' && !providerHost) {
+        showToast('Enter the API endpoint URL for this custom provider', { type: 'error' });
         return;
       }
 
       saveBtn.disabled = true;
+
+      // A new key (always the case when creating, optionally when editing)
+      // must prove it actually works before it's allowed to be saved.
+      // Editing without changing the key skips this -- there's no plaintext
+      // to test against without decrypting the one already stored.
+      if (token) {
+        saveBtn.textContent = 'Testing connection...';
+        try {
+          await testConnection(provider, providerHost, token);
+        } catch (err) {
+          showToast(err.message, { type: 'error' });
+          saveBtn.disabled = false;
+          saveBtn.textContent = editingTokenId ? 'Update Token' : 'Save Token';
+          return;
+        }
+      }
+
       saveBtn.textContent = 'Saving...';
 
+      const wasEditing = !!editingTokenId;
+      const isDefault = tokenIsDefault.checked;
       try {
         if (editingTokenId) {
           // Update existing token
-          const body = { name, provider };
+          const body = { name, provider, provider_host: provider === 'other' ? providerHost : null, model, is_default: isDefault };
           if (token) body.token = token;
 
           const res = await fetch(`/api/tokens/${editingTokenId}`, {
@@ -270,18 +415,34 @@
           const res = await fetch('/api/tokens', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name, provider, token })
+            body: JSON.stringify({ name, provider, provider_host: provider === 'other' ? providerHost : null, model, token, is_default: isDefault })
           });
           if (!res.ok) throw new Error(await res.text());
         }
 
         closeTokenModal();
         loadTokens();
+        showToast(wasEditing ? 'Token updated' : 'Token saved', { type: 'success' });
       } catch (err) {
-        alert('Failed to save token: ' + err.message);
+        showToast('Failed to save token: ' + err.message, { type: 'error' });
       } finally {
         saveBtn.disabled = false;
         saveBtn.textContent = editingTokenId ? 'Update Token' : 'Save Token';
+      }
+    }
+
+    async function setDefaultToken(tokenId) {
+      try {
+        const res = await fetch(`/api/tokens/${tokenId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ is_default: true })
+        });
+        if (!res.ok) throw new Error(await res.text());
+        loadTokens();
+        showToast('Default token updated', { type: 'success' });
+      } catch (err) {
+        showToast('Failed to set default: ' + err.message, { type: 'error' });
       }
     }
 
@@ -289,13 +450,11 @@
     function openDeleteModal(tokenId, name) {
       deletingTokenId = tokenId;
       deleteTokenName.textContent = name;
-      deleteModal.classList.remove('hidden');
-      deleteModal.classList.add('flex');
+      openDialog(deleteModal);
     }
 
     function closeDeleteModal() {
-      deleteModal.classList.add('hidden');
-      deleteModal.classList.remove('flex');
+      closeDialog(deleteModal);
       deletingTokenId = null;
     }
 
@@ -313,8 +472,9 @@
 
         closeDeleteModal();
         loadTokens();
+        showToast('Token deleted', { type: 'success' });
       } catch (err) {
-        alert('Failed to delete token: ' + err.message);
+        showToast('Failed to delete token: ' + err.message, { type: 'error' });
       } finally {
         deleteConfirmBtn.disabled = false;
         deleteConfirmBtn.textContent = 'Delete';
@@ -370,11 +530,15 @@
 
     userMenuBtn?.addEventListener('click', (e) => {
       e.stopPropagation();
-      userDropdown.classList.toggle('hidden');
+      if (userDropdown.classList.contains('hidden')) {
+        openMenu(userDropdown);
+      } else {
+        closeMenu(userDropdown);
+      }
     });
 
     document.addEventListener('click', () => {
-      userDropdown?.classList.add('hidden');
+      closeMenu(userDropdown);
     });
 
     // Initial load

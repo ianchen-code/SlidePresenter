@@ -3,14 +3,17 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Slides</title>
+  <title>Slide Presenter</title>
+  <link rel="stylesheet" href="/transitions.css">
+  <script src="/ui-transitions.js"></script>
+  <script src="/toast.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
       theme: {
         extend: {
           colors: {
-            accent: '#d97757',
+            accent: '#b35d3f',
             bg: '#faf9f6',
             ink: '#1f1c19',
             line: '#e5e0d8',
@@ -22,23 +25,23 @@
 </head>
 <body class="font-sans bg-bg text-ink max-w-3xl mx-auto px-5 py-12 min-h-screen">
   <header class="flex justify-between items-center mb-8">
-    <h1 class="text-2xl font-semibold">Slides</h1>
+    <h1 class="text-2xl font-semibold">Slide Presenter</h1>
     <div class="flex gap-3 items-center">
-      <a href="/token" class="text-accent font-semibold text-sm hover:underline">Manage Tokens</a>
       <button class="bg-accent text-white border-none rounded-lg px-4 py-2.5 text-sm font-semibold cursor-pointer hover:opacity-90" id="newSlideBtn">+ New Slide</button>
 
       <!-- Auth UI -->
       <div id="authContainer" class="flex items-center gap-2 ml-2">
         <a id="loginBtn" href="/login" class="hidden text-stone-600 font-semibold text-sm hover:text-accent">Sign in</a>
         <div id="userMenu" class="hidden relative">
-          <button id="userMenuBtn" class="flex items-center gap-2 text-sm">
+          <button id="userMenuBtn" type="button" class="flex items-center gap-2 text-sm" aria-label="User menu" aria-haspopup="true">
             <img id="userAvatar" src="" alt="" class="w-8 h-8 rounded-full border border-line">
-            <span id="userName" class="hidden sm:inline text-stone-600 font-medium"></span>
           </button>
-          <div id="userDropdown" class="hidden absolute right-0 mt-2 w-48 bg-white border border-line rounded-lg shadow-lg py-1 z-50">
-            <div class="px-4 py-2 border-b border-line">
+          <div id="userDropdown" class="hidden absolute right-0 mt-2 w-56 bg-white border border-line rounded-lg shadow-lg py-1 z-50 transition-all duration-150 origin-top-right opacity-0 scale-95">
+            <div class="px-4 py-3 border-b border-line">
+              <p id="userName" class="text-sm font-semibold text-ink truncate"></p>
               <p id="userEmail" class="text-xs text-stone-500 truncate"></p>
             </div>
+            <a href="/token" class="block px-4 py-2 text-sm text-stone-600 hover:bg-stone-50">Manage Tokens</a>
             <a href="/auth/logout" class="block px-4 py-2 text-sm text-stone-600 hover:bg-stone-50">Sign out</a>
           </div>
         </div>
@@ -54,11 +57,11 @@
   </div>
 
   <!-- New Slide Modal -->
-  <div class="hidden fixed inset-0 bg-black/40 z-50 items-center justify-center" id="modalOverlay">
-    <div class="bg-white rounded-xl w-full max-w-md mx-5 shadow-2xl">
+  <div class="hidden fixed inset-0 bg-black/40 z-50 items-center justify-center transition-opacity duration-200 opacity-0" id="modalOverlay" role="dialog" aria-modal="true" aria-labelledby="newSlideModalTitle">
+    <div class="bg-white rounded-xl w-full max-w-md mx-5 shadow-2xl transition-all duration-200 scale-95 opacity-0">
       <div class="px-6 py-5 border-b border-line flex justify-between items-center">
-        <h2 class="text-lg font-semibold m-0">New Slide</h2>
-        <button class="bg-transparent border-none text-2xl cursor-pointer text-stone-500 hover:text-ink leading-none" id="modalClose">&times;</button>
+        <h2 id="newSlideModalTitle" class="text-lg font-semibold m-0">New Slide</h2>
+        <button type="button" class="bg-transparent border-none cursor-pointer text-stone-500 hover:text-ink p-1 -m-1 rounded" id="modalClose" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
       </div>
       <div class="p-6">
         <form id="jobForm" class="flex flex-col gap-4">
@@ -66,22 +69,14 @@
             <label for="file" class="text-sm font-semibold text-stone-600 block mb-2">Slide file (.pdf or .pptx)</label>
             <input type="file" id="file" name="file" accept=".pdf,.pptx" required class="w-full px-3 py-2.5 border border-line rounded-lg text-sm bg-white">
           </div>
-          <div class="relative">
-            <a href="/token" class="absolute right-0 -top-5 text-xs text-accent hover:underline">Manage tokens</a>
-            <label for="tokenSelect" class="text-sm font-semibold text-stone-600 block mb-2">API Token</label>
-            <select id="tokenSelect" class="w-full px-3 py-2.5 border border-line rounded-lg text-sm bg-white">
-              <option value="">-- Select saved token --</option>
-            </select>
-            <input type="password" id="manualKeyInput" placeholder="sk-ant-..." class="w-full mt-2 px-3 py-2.5 border border-line rounded-lg text-sm bg-white hidden">
-            <input type="hidden" id="apiKey" name="api_key">
-          </div>
           <div>
-            <label for="model" class="text-sm font-semibold text-stone-600 block mb-2">AI Model</label>
-            <select id="model" name="model" class="w-full px-3 py-2.5 border border-line rounded-lg text-sm bg-white">
-              <option value="claude-sonnet-4-5">Claude Sonnet 4.5</option>
-              <option value="claude-3-opus">Claude 3 Opus</option>
-              <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
-            </select>
+            <div class="flex justify-between items-center mb-1">
+              <span class="text-sm font-semibold text-stone-600">API Token</span>
+              <a href="/token" class="text-xs text-accent hover:underline">Manage tokens</a>
+            </div>
+            <p id="defaultTokenInfo" class="text-sm text-stone-500 m-0">Loading...</p>
+            <input type="hidden" id="apiKey" name="api_key">
+            <input type="hidden" id="model" name="model">
           </div>
           <div>
             <label for="voice" class="text-sm font-semibold text-stone-600 block mb-2">Narration voice</label>
@@ -110,11 +105,11 @@
   </div>
 
   <!-- Delete Confirmation Modal -->
-  <div class="hidden fixed inset-0 bg-black/40 z-50 items-center justify-center" id="deleteModal">
-    <div class="bg-white rounded-xl w-full max-w-sm mx-5 shadow-2xl">
+  <div class="hidden fixed inset-0 bg-black/40 z-50 items-center justify-center transition-opacity duration-200 opacity-0" id="deleteModal" role="dialog" aria-modal="true" aria-labelledby="deleteModalTitle">
+    <div class="bg-white rounded-xl w-full max-w-sm mx-5 shadow-2xl transition-all duration-200 scale-95 opacity-0">
       <div class="px-6 py-5 border-b border-line flex justify-between items-center">
-        <h2 class="text-lg font-semibold m-0">Delete Slide</h2>
-        <button class="bg-transparent border-none text-2xl cursor-pointer text-stone-500 hover:text-ink leading-none" id="deleteModalClose">&times;</button>
+        <h2 id="deleteModalTitle" class="text-lg font-semibold m-0">Delete Slide</h2>
+        <button type="button" class="bg-transparent border-none cursor-pointer text-stone-500 hover:text-ink p-1 -m-1 rounded" id="deleteModalClose" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
       </div>
       <div class="p-6">
         <p class="text-stone-600">Are you sure you want to delete "<strong id="deleteSlideTitle"></strong>"? This action cannot be undone.</p>
@@ -145,69 +140,43 @@
     const barFill = document.getElementById('barFill');
     const statusText = document.getElementById('statusText');
     const errorText = document.getElementById('errorText');
-    const tokenSelect = document.getElementById('tokenSelect');
-    const manualKeyInput = document.getElementById('manualKeyInput');
     const apiKeyInput = document.getElementById('apiKey');
+    const modelInput = document.getElementById('model');
+    const defaultTokenInfo = document.getElementById('defaultTokenInfo');
 
-    let savedTokens = [];
-
-    // Load saved tokens
-    async function loadTokens() {
+    // Every AI action in the app uses whichever token is marked default in
+    // Manage Tokens -- no per-form token picker (also avoids the browser's
+    // password manager mistaking a scattered API-key field for a login form).
+    async function loadDefaultTokenInfo() {
       try {
-        const res = await fetch('/api/tokens');
-        savedTokens = await res.json();
-        updateTokenSelect();
+        const res = await fetch('/api/tokens/default');
+        const token = await res.json();
+        if (token) {
+          defaultTokenInfo.textContent = `Using "${token.name}" (${token.token_masked}) — ${token.model}`;
+          defaultTokenInfo.classList.remove('text-red-600');
+          defaultTokenInfo.classList.add('text-stone-500');
+        } else {
+          defaultTokenInfo.textContent = 'No default token set -- add one in Manage Tokens';
+          defaultTokenInfo.classList.remove('text-stone-500');
+          defaultTokenInfo.classList.add('text-red-600');
+        }
       } catch (err) {
-        console.error('Failed to load tokens:', err);
+        defaultTokenInfo.textContent = 'Failed to load default token';
       }
     }
-
-    function updateTokenSelect() {
-      // Clear all options except the first placeholder
-      while (tokenSelect.options.length > 1) {
-        tokenSelect.remove(1);
-      }
-
-      // Add saved tokens
-      savedTokens.forEach(token => {
-        const option = document.createElement('option');
-        option.value = token.id;
-        option.textContent = `${token.name} (${token.token_masked})`;
-        tokenSelect.appendChild(option);
-      });
-
-      // Add "Enter manually..." option at the end
-      const manualOption = document.createElement('option');
-      manualOption.value = '__manual__';
-      manualOption.textContent = 'Enter manually...';
-      tokenSelect.appendChild(manualOption);
-    }
-
-    tokenSelect.addEventListener('change', () => {
-      if (tokenSelect.value === '__manual__') {
-        manualKeyInput.classList.remove('hidden');
-      } else {
-        manualKeyInput.classList.add('hidden');
-        manualKeyInput.value = '';
-      }
-    });
 
     // Modal controls
     async function openModal() {
-      modalOverlay.classList.remove('hidden');
-      modalOverlay.classList.add('flex');
+      openDialog(modalOverlay);
       form.reset();
-      tokenSelect.value = '';
-      manualKeyInput.classList.add('hidden');
       uploadStatus.classList.add('hidden');
       errorText.textContent = '';
       submitBtn.disabled = false;
-      await loadTokens();
+      await loadDefaultTokenInfo();
     }
 
     function closeModal() {
-      modalOverlay.classList.add('hidden');
-      modalOverlay.classList.remove('flex');
+      closeDialog(modalOverlay);
     }
 
     newSlideBtn.addEventListener('click', openModal);
@@ -242,18 +211,19 @@
             'done': 'bg-emerald-100 text-emerald-800',
             'error': 'bg-red-100 text-red-800'
           };
+          const displayName = job.title || job.filename || 'Untitled';
           return `
             <div class="bg-white border border-line rounded-xl px-5 py-4 flex justify-between items-center transition-all hover:border-accent hover:shadow-md group">
               <a href="/slide/${job.id}" class="flex-1 min-w-0 no-underline text-inherit">
-                <div class="font-semibold text-base mb-1 whitespace-nowrap overflow-hidden text-ellipsis">${escapeHtml(job.filename || 'Untitled')}</div>
+                <div class="font-semibold text-base mb-1 whitespace-nowrap overflow-hidden text-ellipsis">${escapeHtml(displayName)}</div>
                 <div class="text-sm text-stone-500">${dateStr}</div>
               </a>
               <div class="flex items-center gap-3">
                 <span class="px-2.5 py-1 rounded-full text-xs font-semibold capitalize ${statusClasses[job.status] || ''}">${job.status}</span>
-                <button onclick="event.stopPropagation(); deleteSlide('${job.id}', '${escapeHtml(job.filename || 'Untitled').replace(/'/g, "\\'")}')"
-                  class="opacity-0 group-hover:opacity-100 p-1.5 text-stone-400 hover:text-red-500 hover:bg-red-50 rounded transition-all" title="Delete">
-                  <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                <button type="button" data-id="${job.id}" data-name="${escapeHtml(displayName)}"
+                  class="delete-btn opacity-0 group-hover:opacity-100 p-1.5 text-stone-400 hover:text-red-500 hover:bg-red-50 rounded transition-all" aria-label="Delete ${escapeHtml(displayName)}">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 6h18" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /><line x1="10" x2="10" y1="11" y2="17" /><line x1="14" x2="14" y1="11" y2="17" />
                   </svg>
                 </button>
               </div>
@@ -261,11 +231,14 @@
           `;
         }).join('');
 
-        // Re-attach event listeners after rendering
-        document.querySelectorAll('[data-delete-id]').forEach(btn => {
+        // Re-attach event listeners after rendering. Using data attributes +
+        // addEventListener (rather than inline onclick="...") so an
+        // attacker-controlled filename can never be interpreted as script.
+        document.querySelectorAll('.delete-btn').forEach(btn => {
           btn.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
+            deleteSlide(btn.dataset.id, btn.dataset.name);
           });
         });
       } catch (err) {
@@ -274,43 +247,41 @@
     }
 
     function escapeHtml(text) {
-      const div = document.createElement('div');
-      div.textContent = text;
-      return div.innerHTML;
+      // Escapes quotes too (not just & < >) so this is also safe to drop
+      // into an HTML attribute value, not just text content.
+      return String(text)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
     }
 
     // Get API key (from saved token or manual input)
-    async function getApiKey() {
-      const selected = tokenSelect.value;
-
-      if (selected === '__manual__') {
-        return manualKeyInput.value.trim();
-      } else if (selected) {
-        // Fetch decrypted token
-        const res = await fetch(`/api/tokens/${selected}/decrypt`);
-        if (!res.ok) throw new Error('Failed to retrieve token');
-        const data = await res.json();
-        return data.token;
+    async function getDefaultToken() {
+      const res = await fetch('/api/tokens/default/decrypt');
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.detail || 'Failed to retrieve token');
       }
-
-      return '';
+      return res.json(); // { token, provider, provider_host }
     }
 
     // Form submission
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
 
-      // Get API key
-      let apiKey;
+      // Get API key + which provider/host it belongs to
+      let tokenInfo;
       try {
-        apiKey = await getApiKey();
+        tokenInfo = await getDefaultToken();
       } catch (err) {
-        errorText.textContent = 'Failed to retrieve API key: ' + err.message;
+        showToast('Failed to retrieve API key: ' + err.message, { type: 'error' });
         return;
       }
 
-      if (!apiKey) {
-        errorText.textContent = 'Please select a token or enter an API key';
+      if (!tokenInfo?.token) {
+        showToast('No default API token set -- add one in Manage Tokens', { type: 'error' });
         return;
       }
 
@@ -320,10 +291,13 @@
       barFill.style.width = '2%';
       statusText.textContent = 'Uploading...';
 
-      // Set the API key in the hidden input
-      apiKeyInput.value = apiKey;
+      // Set the API key + model in their hidden inputs
+      apiKeyInput.value = tokenInfo.token;
+      modelInput.value = tokenInfo.model || 'claude-sonnet-4-5';
 
       const fd = new FormData(form);
+      fd.append('provider', tokenInfo.provider || 'anthropic');
+      fd.append('provider_host', tokenInfo.provider_host || '');
       try {
         const res = await fetch('/api/jobs', { method: 'POST', body: fd });
         if (!res.ok) throw new Error(await res.text());
@@ -348,13 +322,11 @@
     function deleteSlide(id, title) {
       deletingSlideId = id;
       deleteSlideTitle.textContent = title;
-      deleteModal.classList.remove('hidden');
-      deleteModal.classList.add('flex');
+      openDialog(deleteModal);
     }
 
     function closeDeleteModal() {
-      deleteModal.classList.add('hidden');
-      deleteModal.classList.remove('flex');
+      closeDialog(deleteModal);
       deletingSlideId = null;
     }
 
@@ -369,8 +341,9 @@
         if (!res.ok) throw new Error(await res.text());
         closeDeleteModal();
         loadSlides();
+        showToast('Slide deleted', { type: 'success' });
       } catch (err) {
-        alert('Failed to delete: ' + err.message);
+        showToast('Failed to delete: ' + err.message, { type: 'error' });
       } finally {
         deleteConfirmBtn.disabled = false;
         deleteConfirmBtn.textContent = 'Delete';
@@ -416,16 +389,19 @@
 
     userMenuBtn?.addEventListener('click', (e) => {
       e.stopPropagation();
-      userDropdown.classList.toggle('hidden');
+      if (userDropdown.classList.contains('hidden')) {
+        openMenu(userDropdown);
+      } else {
+        closeMenu(userDropdown);
+      }
     });
 
     document.addEventListener('click', () => {
-      userDropdown?.classList.add('hidden');
+      closeMenu(userDropdown);
     });
 
     // Initial load
     loadSlides();
-    loadTokens();
     checkAuth();
 
     // Refresh list periodically to update statuses

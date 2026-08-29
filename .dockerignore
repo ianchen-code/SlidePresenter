@@ -1,0 +1,8 @@
+.git
+backend/venv
+backend/__pycache__
+**/__pycache__
+**/*.pyc
+data/jobs
+.env
+.DS_Store

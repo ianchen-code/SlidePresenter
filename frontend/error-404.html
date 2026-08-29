@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Page Not Found - Slide Presenter</title>
+  <link rel="stylesheet" href="/transitions.css">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            accent: '#b35d3f',
+            bg: '#faf9f6',
+            ink: '#1f1c19',
+            line: '#e5e0d8',
+          }
+        }
+      }
+    }
+  </script>
+</head>
+<body class="font-sans bg-bg text-ink min-h-screen flex items-center justify-center px-5">
+  <div class="text-center max-w-sm">
+    <div class="text-6xl font-bold text-accent mb-2">404</div>
+    <h1 class="text-xl font-semibold mb-2">Page not found</h1>
+    <p class="text-stone-500 mb-8">The page you're looking for doesn't exist or may have been moved.</p>
+    <a href="/" class="inline-block bg-accent text-white no-underline rounded-lg px-4 py-2.5 text-sm font-semibold hover:opacity-90">&larr; Back to home</a>
+  </div>
+
+  <footer class="fixed bottom-4 right-6 text-xs text-stone-400">
+    &copy; <span id="year"></span> ianchen. All rights reserved.
+  </footer>
+  <script>document.getElementById('year').textContent = new Date().getFullYear();</script>
+</body>
+</html>
