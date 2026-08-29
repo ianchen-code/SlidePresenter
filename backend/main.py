@@ -685,6 +685,7 @@ class GenerateDetailsRequest(BaseModel):
     current_description: Optional[str] = None
     provider: str = "anthropic"
     provider_host: Optional[str] = None
+    model: Optional[str] = None
 
 @app.post("/api/jobs/{job_id}/generate-details")
 async def generate_job_details(job_id: str, data: GenerateDetailsRequest, request: Request, share: Optional[str] = None):
@@ -830,6 +831,7 @@ class SlideAiTextRequest(BaseModel):
     prompt: Optional[str] = None  # required for custom
     provider: str = "anthropic"
     provider_host: Optional[str] = None
+    model: Optional[str] = None
 
 @app.post("/api/jobs/{job_id}/slides/{slide_num}/ai-text")
 async def slide_ai_text(job_id: str, slide_num: int, data: SlideAiTextRequest, request: Request, share: Optional[str] = None):
@@ -842,7 +844,7 @@ async def slide_ai_text(job_id: str, slide_num: int, data: SlideAiTextRequest, r
         raise HTTPException(404, "Job not found")
     check_job_edit_access(job, request, share)
 
-    model = data.model or DEFAULT_MODEL_BY_PROVIDER.get(data.provider, "claude-sonnet-4-5")
+    model = job.get("model") or "claude-sonnet-4-5"
 
     if data.action == "regenerate":
         image_path = os.path.join(DATA_DIR, job_id, "slides", f"slide_{slide_num:02d}.png")
