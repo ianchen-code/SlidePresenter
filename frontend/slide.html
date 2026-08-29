@@ -513,7 +513,7 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             api_key: tokenInfo.token, action, current_text: textarea.value, prompt: promptText,
-            provider: tokenInfo.provider, provider_host: tokenInfo.provider_host,
+            provider: tokenInfo.provider, provider_host: tokenInfo.provider_host, model: tokenInfo.model,
           })
         });
         if (!res.ok) throw new Error(await res.text());
@@ -792,6 +792,7 @@
             current_description: descriptionInput.value,
             provider: tokenInfo.provider,
             provider_host: tokenInfo.provider_host,
+            model: tokenInfo.model,
           })
         });
         if (!res.ok) throw new Error(await res.text());

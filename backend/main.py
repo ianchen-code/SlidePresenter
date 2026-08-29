@@ -685,6 +685,7 @@ class GenerateDetailsRequest(BaseModel):
     current_description: Optional[str] = None
     provider: str = "anthropic"
     provider_host: Optional[str] = None
+    model: Optional[str] = None
 
 @app.post("/api/jobs/{job_id}/generate-details")
 async def generate_job_details(job_id: str, data: GenerateDetailsRequest, request: Request, share: Optional[str] = None):
@@ -706,7 +707,10 @@ async def generate_job_details(job_id: str, data: GenerateDetailsRequest, reques
     with open(transcript_path, "r", encoding="utf-8") as f:
         transcript = json.load(f)
 
-    model = job.get("model") or "claude-sonnet-4-5"
+    # Prefer the model of the token actually being used for this call --
+    # job.model is a leftover from whatever token created the presentation,
+    # which may be for a different provider than the caller's current token.
+    model = data.model or job.get("model") or "claude-sonnet-4-5"
     try:
         if data.action == "improve" and (data.current_title or data.current_description):
             return improve_title_description(
@@ -830,6 +834,7 @@ class SlideAiTextRequest(BaseModel):
     prompt: Optional[str] = None  # required for custom
     provider: str = "anthropic"
     provider_host: Optional[str] = None
+    model: Optional[str] = None
 
 @app.post("/api/jobs/{job_id}/slides/{slide_num}/ai-text")
 async def slide_ai_text(job_id: str, slide_num: int, data: SlideAiTextRequest, request: Request, share: Optional[str] = None):
@@ -842,7 +847,10 @@ async def slide_ai_text(job_id: str, slide_num: int, data: SlideAiTextRequest, r
         raise HTTPException(404, "Job not found")
     check_job_edit_access(job, request, share)
 
-    model = job.get("model") or "claude-sonnet-4-5"
+    # Prefer the model of the token actually being used for this call --
+    # job.model is a leftover from whatever token created the presentation,
+    # which may be for a different provider than the caller's current token.
+    model = data.model or job.get("model") or "claude-sonnet-4-5"
 
     if data.action == "regenerate":
         image_path = os.path.join(DATA_DIR, job_id, "slides", f"slide_{slide_num:02d}.png")
