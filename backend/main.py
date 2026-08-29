@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import hashlib
 import json
@@ -713,11 +714,13 @@ async def generate_job_details(job_id: str, data: GenerateDetailsRequest, reques
     model = data.model or job.get("model") or "claude-sonnet-4-5"
     try:
         if data.action == "improve" and (data.current_title or data.current_description):
-            return improve_title_description(
+            return await asyncio.to_thread(
+                improve_title_description,
                 data.current_title, data.current_description, transcript, data.api_key,
                 model=model, provider=data.provider, provider_host=data.provider_host,
             )
-        return generate_title_description(
+        return await asyncio.to_thread(
+            generate_title_description,
             transcript, data.api_key, model=model, provider=data.provider, provider_host=data.provider_host,
         )
     except Exception as e:
@@ -857,7 +860,11 @@ async def slide_ai_text(job_id: str, slide_num: int, data: SlideAiTextRequest, r
         if not os.path.exists(image_path):
             raise HTTPException(404, "Slide image not found")
         try:
-            return {"text": get_slide_narration(image_path, data.api_key, model=model, provider=data.provider, provider_host=data.provider_host)}
+            text = await asyncio.to_thread(
+                get_slide_narration, image_path, data.api_key,
+                model=model, provider=data.provider, provider_host=data.provider_host,
+            )
+            return {"text": text}
         except Exception as e:
             raise HTTPException(502, f"AI regeneration failed: {e}")
 
@@ -867,7 +874,8 @@ async def slide_ai_text(job_id: str, slide_num: int, data: SlideAiTextRequest, r
         if data.action == "custom" and not (data.prompt or "").strip():
             raise HTTPException(400, "prompt is required for a custom edit")
         try:
-            text = edit_slide_narration(
+            text = await asyncio.to_thread(
+                edit_slide_narration,
                 data.current_text,
                 data.api_key,
                 model=model,

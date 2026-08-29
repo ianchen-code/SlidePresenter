@@ -4,6 +4,7 @@ import json
 import os
 import re
 import subprocess
+import time
 from typing import Callable, List, Optional
 
 import requests
@@ -136,6 +137,31 @@ def chat_completion(
     raise ValueError(f"Unknown provider: {provider}")
 
 
+def chat_completion_with_retry(
+    prompt: str,
+    api_key: str,
+    model: str,
+    provider: str = "anthropic",
+    provider_host: Optional[str] = None,
+    timeout: int = 60,
+    image_b64: Optional[str] = None,
+    max_retries: int = 3,
+    what: str = "Request",
+) -> str:
+    """chat_completion, retrying transient network failures. Reasoning models
+    can idle well past a short timeout before the first byte, so every
+    user-facing AI action goes through here rather than a bare one-shot call."""
+    last_err = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            return chat_completion(prompt, api_key, model, provider, provider_host, timeout=timeout, image_b64=image_b64)
+        except requests.exceptions.RequestException as e:
+            last_err = e
+            if attempt < max_retries:
+                time.sleep(3)
+    raise RuntimeError(f"{what} failed after {max_retries} attempts: {last_err}")
+
+
 # ---------------------------------------------------------------------------
 # List available models per provider. Doubles as a connectivity/auth test --
 # a successful call proves the key actually works, which is why Manage
@@ -212,16 +238,11 @@ def get_slide_narration(
     with open(image_path, "rb") as f:
         image_b64 = base64.b64encode(f.read()).decode()
 
-    last_err = None
-    for attempt in range(1, max_retries + 1):
-        try:
-            return chat_completion(NARRATION_PROMPT, api_key, model, provider, provider_host, timeout=timeout, image_b64=image_b64)
-        except requests.exceptions.RequestException as e:
-            last_err = e
-            if attempt < max_retries:
-                import time
-                time.sleep(3)
-    raise RuntimeError(f"Narration request failed after {max_retries} attempts: {last_err}")
+    return chat_completion_with_retry(
+        NARRATION_PROMPT, api_key, model, provider, provider_host,
+        timeout=timeout, image_b64=image_b64, max_retries=max_retries,
+        what="Narration request",
+    )
 
 
 def _parse_json_reply(content: str) -> dict:
@@ -271,11 +292,14 @@ def generate_title_description(
     model: str = "claude-sonnet-4-5",
     provider: str = "anthropic",
     provider_host: Optional[str] = None,
-    timeout: int = 30,
+    timeout: int = 60,
 ) -> dict:
     """Suggest a fresh title + description for the whole deck, from scratch."""
     prompt = GENERATE_TITLE_DESCRIPTION_PROMPT.format(script=_script_from_transcript(transcript))
-    content = chat_completion(prompt, api_key, model, provider, provider_host, timeout=timeout)
+    content = chat_completion_with_retry(
+        prompt, api_key, model, provider, provider_host,
+        timeout=timeout, what="Title/description request",
+    )
     return _clean_title_description(_parse_json_reply(content))
 
 
@@ -287,7 +311,7 @@ def improve_title_description(
     model: str = "claude-sonnet-4-5",
     provider: str = "anthropic",
     provider_host: Optional[str] = None,
-    timeout: int = 30,
+    timeout: int = 60,
 ) -> dict:
     """Polish an existing title + description without changing their meaning."""
     prompt = IMPROVE_TITLE_DESCRIPTION_PROMPT.format(
@@ -295,7 +319,10 @@ def improve_title_description(
         description=current_description or "(none)",
         script=_script_from_transcript(transcript),
     )
-    content = chat_completion(prompt, api_key, model, provider, provider_host, timeout=timeout)
+    content = chat_completion_with_retry(
+        prompt, api_key, model, provider, provider_host,
+        timeout=timeout, what="Title/description request",
+    )
     return _clean_title_description(_parse_json_reply(content))
 
 
@@ -323,7 +350,7 @@ def edit_slide_narration(
     instruction: Optional[str] = None,
     provider: str = "anthropic",
     provider_host: Optional[str] = None,
-    timeout: int = 30,
+    timeout: int = 60,
 ) -> str:
     """Improve existing narration, or rewrite it per a custom instruction."""
     prompt = (
@@ -331,7 +358,10 @@ def edit_slide_narration(
         if instruction
         else IMPROVE_NARRATION_PROMPT.format(text=current_text)
     )
-    return chat_completion(prompt, api_key, model, provider, provider_host, timeout=timeout)
+    return chat_completion_with_retry(
+        prompt, api_key, model, provider, provider_host,
+        timeout=timeout, what="Narration edit request",
+    )
 
 
 # ---------------------------------------------------------------------------
