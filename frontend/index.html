@@ -76,15 +76,7 @@
             </div>
             <p id="defaultTokenInfo" class="text-sm text-stone-500 m-0">Loading...</p>
             <input type="hidden" id="apiKey" name="api_key">
-          </div>
-          <div>
-            <label for="model" class="text-sm font-semibold text-stone-600 block mb-2">AI Model</label>
-            <select id="model" name="model" class="w-full px-3 py-2.5 border border-line rounded-lg text-sm bg-white">
-              <option value="claude-sonnet-4-5">Claude Sonnet 4.5 (Anthropic)</option>
-              <option value="claude-3-opus">Claude 3 Opus (Anthropic)</option>
-              <option value="gpt-4o">GPT-4o (OpenAI)</option>
-            </select>
-            <p class="text-xs text-stone-500 mt-1.5">Pick a model matching your default token's provider (or, for a custom "Other" token, whatever your endpoint expects).</p>
+            <input type="hidden" id="model" name="model">
           </div>
           <div>
             <label for="voice" class="text-sm font-semibold text-stone-600 block mb-2">Narration voice</label>
@@ -149,6 +141,7 @@
     const statusText = document.getElementById('statusText');
     const errorText = document.getElementById('errorText');
     const apiKeyInput = document.getElementById('apiKey');
+    const modelInput = document.getElementById('model');
     const defaultTokenInfo = document.getElementById('defaultTokenInfo');
 
     // Every AI action in the app uses whichever token is marked default in
@@ -159,7 +152,7 @@
         const res = await fetch('/api/tokens/default');
         const token = await res.json();
         if (token) {
-          defaultTokenInfo.textContent = `Using "${token.name}" (${token.token_masked})`;
+          defaultTokenInfo.textContent = `Using "${token.name}" (${token.token_masked}) — ${token.model}`;
           defaultTokenInfo.classList.remove('text-red-600');
           defaultTokenInfo.classList.add('text-stone-500');
         } else {
@@ -298,8 +291,9 @@
       barFill.style.width = '2%';
       statusText.textContent = 'Uploading...';
 
-      // Set the API key in the hidden input
+      // Set the API key + model in their hidden inputs
       apiKeyInput.value = tokenInfo.token;
+      modelInput.value = tokenInfo.model || 'claude-sonnet-4-5';
 
       const fd = new FormData(form);
       fd.append('provider', tokenInfo.provider || 'anthropic');

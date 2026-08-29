@@ -240,6 +240,7 @@ def init_db():
     """)
     cursor.execute("ALTER TABLE tokens ADD COLUMN IF NOT EXISTS is_default BOOLEAN NOT NULL DEFAULT FALSE")
     cursor.execute("ALTER TABLE tokens ADD COLUMN IF NOT EXISTS provider_host TEXT")
+    cursor.execute("ALTER TABLE tokens ADD COLUMN IF NOT EXISTS model TEXT")
 
     conn.commit()
     cursor.close()
@@ -955,13 +956,20 @@ def _regenerate_job(job_id: str, job_dir: str, changes: List[SlideChange], api_k
 # Token Management Endpoints
 # ---------------------------------------------------------------------------
 
-VALID_PROVIDERS = ("anthropic", "openai", "other")
+VALID_PROVIDERS = ("anthropic", "openai", "gemini", "other")
+DEFAULT_MODEL_BY_PROVIDER = {
+    "anthropic": "claude-sonnet-4-5",
+    "openai": "gpt-4o",
+    "gemini": "gemini-2.5-flash",
+    "other": "claude-sonnet-4-5",
+}
 
 class TokenCreate(BaseModel):
     name: str
     token: str
     provider: str = "anthropic"
     provider_host: Optional[str] = None  # required when provider == "other"
+    model: Optional[str] = None
     is_default: bool = False
 
 class TokenUpdate(BaseModel):
@@ -969,6 +977,7 @@ class TokenUpdate(BaseModel):
     token: Optional[str] = None
     provider: Optional[str] = None
     provider_host: Optional[str] = None
+    model: Optional[str] = None
     is_default: Optional[bool] = None
 
 def _token_dict(row: dict) -> dict:
@@ -977,6 +986,7 @@ def _token_dict(row: dict) -> dict:
         "name": row["name"],
         "provider": row["provider"],
         "provider_host": row.get("provider_host"),
+        "model": row.get("model") or DEFAULT_MODEL_BY_PROVIDER.get(row["provider"], "claude-sonnet-4-5"),
         "token_masked": row["token_masked"],
         "is_default": row["is_default"],
         "created_at": iso_utc(row["created_at"]),
@@ -989,7 +999,7 @@ async def list_tokens(request: Request):
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT id, name, provider, provider_host, token_masked, is_default, created_at, last_used_at
+            SELECT id, name, provider, provider_host, model, token_masked, is_default, created_at, last_used_at
             FROM tokens WHERE user_id IS NOT DISTINCT FROM %s ORDER BY created_at DESC
         """, (caller_id(request),))
         return [_token_dict(row) for row in cursor.fetchall()]
@@ -1001,7 +1011,7 @@ async def get_default_token(request: Request):
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT id, name, provider, provider_host, token_masked, is_default, created_at, last_used_at
+            SELECT id, name, provider, provider_host, model, token_masked, is_default, created_at, last_used_at
             FROM tokens WHERE user_id IS NOT DISTINCT FROM %s AND is_default = TRUE
         """, (caller_id(request),))
         row = cursor.fetchone()
@@ -1015,7 +1025,7 @@ async def get_default_token_decrypted(request: Request):
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT id, token_encrypted, provider, provider_host FROM tokens
+            SELECT id, token_encrypted, provider, provider_host, model FROM tokens
             WHERE user_id IS NOT DISTINCT FROM %s AND is_default = TRUE
         """, (caller_id(request),))
         row = cursor.fetchone()
@@ -1031,6 +1041,7 @@ async def get_default_token_decrypted(request: Request):
                 "token": decrypt_token(row["token_encrypted"]),
                 "provider": row["provider"],
                 "provider_host": row["provider_host"],
+                "model": row["model"] or DEFAULT_MODEL_BY_PROVIDER.get(row["provider"], "claude-sonnet-4-5"),
             }
         except InvalidToken:
             raise HTTPException(400, "Your default token was saved with a previous encryption scheme. Please delete and re-add it.")
@@ -1050,6 +1061,7 @@ async def create_token(request: Request, data: TokenCreate):
     token_encrypted = encrypt_token(data.token)
     token_masked = mask_token(data.token)
     provider_host = data.provider_host.strip() if data.provider == "other" and data.provider_host else None
+    model = (data.model or "").strip() or DEFAULT_MODEL_BY_PROVIDER.get(data.provider, "claude-sonnet-4-5")
 
     with DB_LOCK:
         with get_db() as conn:
@@ -1062,10 +1074,10 @@ async def create_token(request: Request, data: TokenCreate):
                 cursor.execute("UPDATE tokens SET is_default = FALSE WHERE user_id IS NOT DISTINCT FROM %s", (user_id,))
 
             cursor.execute("""
-                INSERT INTO tokens (id, user_id, name, provider, provider_host, token_encrypted, token_masked, is_default)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO tokens (id, user_id, name, provider, provider_host, model, token_encrypted, token_masked, is_default)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING created_at
-            """, (token_id, user_id, data.name, data.provider, provider_host, token_encrypted, token_masked, make_default))
+            """, (token_id, user_id, data.name, data.provider, provider_host, model, token_encrypted, token_masked, make_default))
             result = cursor.fetchone()
             conn.commit()
 
@@ -1074,6 +1086,7 @@ async def create_token(request: Request, data: TokenCreate):
         "name": data.name,
         "provider": data.provider,
         "provider_host": provider_host,
+        "model": model,
         "token_masked": token_masked,
         "is_default": make_default,
         "created_at": iso_utc(result["created_at"]) if result else None,
@@ -1085,7 +1098,7 @@ async def get_token(token_id: str, request: Request):
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT id, name, provider, provider_host, token_masked, is_default, created_at, last_used_at
+            SELECT id, name, provider, provider_host, model, token_masked, is_default, created_at, last_used_at
             FROM tokens WHERE id = %s AND user_id IS NOT DISTINCT FROM %s
         """, (token_id, caller_id(request)))
         row = cursor.fetchone()
@@ -1099,7 +1112,7 @@ async def get_decrypted_token(token_id: str, request: Request):
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT token_encrypted, provider, provider_host FROM tokens WHERE id = %s AND user_id IS NOT DISTINCT FROM %s",
+            "SELECT token_encrypted, provider, provider_host, model FROM tokens WHERE id = %s AND user_id IS NOT DISTINCT FROM %s",
             (token_id, caller_id(request)),
         )
         row = cursor.fetchone()
@@ -1119,6 +1132,7 @@ async def get_decrypted_token(token_id: str, request: Request):
                 "token": decrypt_token(row["token_encrypted"]),
                 "provider": row["provider"],
                 "provider_host": row["provider_host"],
+                "model": row["model"] or DEFAULT_MODEL_BY_PROVIDER.get(row["provider"], "claude-sonnet-4-5"),
             }
         except InvalidToken:
             raise HTTPException(400, "This token was saved with a previous encryption scheme. Please delete and re-add it.")
@@ -1150,6 +1164,8 @@ async def update_token(token_id: str, data: TokenUpdate, request: Request):
                 updates["provider_host"] = None  # meaningless for anthropic/openai
         if data.provider_host is not None:
             updates["provider_host"] = data.provider_host.strip() or None
+        if data.model is not None:
+            updates["model"] = data.model.strip() or None
         if data.token is not None:
             updates["token_encrypted"] = encrypt_token(data.token)
             updates["token_masked"] = mask_token(data.token)

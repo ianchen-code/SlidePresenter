@@ -57,16 +57,17 @@ NARRATION_PROMPT = (
 
 
 # ---------------------------------------------------------------------------
-# Multi-provider LLM dispatch. Every saved token has a provider ("anthropic",
-# "openai", or "other" with a user-supplied host from Manage Tokens), and
-# every AI call in this file goes through chat_completion() below instead of
-# one hardcoded endpoint, so whichever provider the caller's token is for
-# gets used correctly.
+# Multi-provider LLM dispatch. Every saved token has a provider
+# ("anthropic", "openai", "gemini", or "other" with a user-supplied host
+# from Manage Tokens), and every AI call in this file goes through
+# chat_completion() below instead of one hardcoded endpoint, so whichever
+# provider the caller's token is for gets used correctly.
 # ---------------------------------------------------------------------------
 
 ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
 ANTHROPIC_VERSION = "2023-06-01"
 OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
+GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
 
 def _openai_style_completion(prompt: str, api_key: str, model: str, url: str, timeout: int, image_b64: Optional[str] = None) -> str:
@@ -98,6 +99,18 @@ def _anthropic_completion(prompt: str, api_key: str, model: str, timeout: int, i
     return response.json()["content"][0]["text"].strip()
 
 
+def _gemini_completion(prompt: str, api_key: str, model: str, timeout: int, image_b64: Optional[str] = None) -> str:
+    parts = [{"text": prompt}]
+    if image_b64:
+        parts.append({"inline_data": {"mime_type": "image/png", "data": image_b64}})
+    payload = {"contents": [{"parts": parts}]}
+    headers = {"x-goog-api-key": api_key, "Content-Type": "application/json"}
+    url = GEMINI_API_URL.format(model=model)
+    response = requests.post(url, headers=headers, json=payload, timeout=timeout)
+    response.raise_for_status()
+    return response.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+
+
 def chat_completion(
     prompt: str,
     api_key: str,
@@ -114,6 +127,8 @@ def chat_completion(
         return _anthropic_completion(prompt, api_key, model, timeout, image_b64=image_b64)
     if provider == "openai":
         return _openai_style_completion(prompt, api_key, model, OPENAI_API_URL, timeout, image_b64=image_b64)
+    if provider == "gemini":
+        return _gemini_completion(prompt, api_key, model, timeout, image_b64=image_b64)
     if provider == "other":
         if not provider_host:
             raise ValueError("This token's provider is 'Other' but has no API host set. Edit it in Manage Tokens.")
