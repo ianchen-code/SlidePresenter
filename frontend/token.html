@@ -98,8 +98,7 @@
               <span id="fetchModelsBtnLabel">Fetch models</span>
             </button>
           </div>
-          <input type="text" id="tokenModel" list="modelSuggestions" placeholder="claude-sonnet-4-5" class="w-full px-3 py-2.5 border border-line rounded-lg text-sm bg-white">
-          <datalist id="modelSuggestions"></datalist>
+          <select id="tokenModel" class="w-full px-3 py-2.5 border border-line rounded-lg text-sm bg-white"></select>
           <p class="text-xs text-stone-500 mt-1.5">Used for narration and every AI action with this token. Enter your API token below, then "Fetch models" to list what's actually available.</p>
         </div>
         <div class="mb-4">
@@ -156,7 +155,6 @@
     const tokenProviderHostRow = document.getElementById('tokenProviderHostRow');
     const tokenProviderHost = document.getElementById('tokenProviderHost');
     const tokenModel = document.getElementById('tokenModel');
-    const modelSuggestions = document.getElementById('modelSuggestions');
     const fetchModelsBtn = document.getElementById('fetchModelsBtn');
     const fetchModelsBtnLabel = document.getElementById('fetchModelsBtnLabel');
     const tokenValue = document.getElementById('tokenValue');
@@ -192,7 +190,7 @@
       fetchModelsBtnLabel.textContent = 'Fetching...';
       try {
         const { models } = await testConnection(tokenProvider.value, tokenProviderHost.value.trim(), apiKey);
-        modelSuggestions.innerHTML = models.map(m => `<option value="${m.replace(/"/g, '&quot;')}"></option>`).join('');
+        populateModelSelect(models, tokenModel.value.trim());
         showToast(`Connected — ${models.length} model(s) found`, { type: 'success' });
       } catch (err) {
         showToast(err.message, { type: 'error' });
@@ -214,12 +212,25 @@
     }
     tokenProvider.addEventListener('change', () => {
       updateProviderHostVisibility();
-      // Only overwrite the model field if it's empty or still shows some
-      // provider's default -- never clobber a value the user typed in.
-      if (!tokenModel.value.trim() || Object.values(DEFAULT_MODEL_BY_PROVIDER).includes(tokenModel.value.trim())) {
-        tokenModel.value = DEFAULT_MODEL_BY_PROVIDER[tokenProvider.value] || '';
-      }
+      // Fetched models are specific to the previous provider/token -- they
+      // don't carry over to a different provider.
+      populateModelSelect([], DEFAULT_MODEL_BY_PROVIDER[tokenProvider.value] || '');
     });
+
+    // Model select -- populated from whatever "Fetch models" last returned.
+    // `selectedValue` is always kept as an option (even if it's not in
+    // `options`) so a value fetched under a previous token, or loaded from
+    // an existing token record, is never silently dropped.
+    function populateModelSelect(options, selectedValue) {
+      const values = selectedValue && !options.includes(selectedValue)
+        ? [selectedValue, ...options]
+        : options.length ? options : [selectedValue].filter(Boolean);
+      tokenModel.innerHTML = values.map(m =>
+        `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`
+      ).join('');
+      if (selectedValue) tokenModel.value = selectedValue;
+    }
+
     const cancelBtn = document.getElementById('cancelBtn');
     const saveBtn = document.getElementById('saveBtn');
 
@@ -317,7 +328,7 @@
       tokenName.value = '';
       tokenProvider.value = 'anthropic';
       tokenProviderHost.value = '';
-      tokenModel.value = DEFAULT_MODEL_BY_PROVIDER.anthropic;
+      populateModelSelect([], DEFAULT_MODEL_BY_PROVIDER.anthropic);
       tokenValue.value = '';
       tokenValue.placeholder = 'sk-ant-...';
       tokenIsDefault.checked = false;
@@ -337,7 +348,7 @@
         tokenName.value = token.name;
         tokenProvider.value = token.provider;
         tokenProviderHost.value = token.provider_host || '';
-        tokenModel.value = token.model || DEFAULT_MODEL_BY_PROVIDER[token.provider] || '';
+        populateModelSelect([], token.model || DEFAULT_MODEL_BY_PROVIDER[token.provider] || '');
         tokenValue.value = '';
         tokenValue.placeholder = 'Leave blank to keep current token';
         tokenIsDefault.checked = !!token.is_default;
