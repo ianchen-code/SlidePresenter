@@ -46,17 +46,28 @@ function showToast(message, { type = 'info', duration = 3500 } = {}) {
   const iconPath = TOAST_ICON_PATH[type] || TOAST_ICON_PATH.info;
   const ring = type === 'share' ? ' ring-1 ring-accent/30' : '';
 
+  // w-max lets short toasts hug their content; min-w-0 on the message span
+  // is what actually lets a flex child wrap instead of forcing the row
+  // wider than max-w-sm, and overflow-wrap:anywhere covers long unbroken
+  // tokens (URLs, ids) that a normal word-wrap wouldn't break on.
   toast.className = `pointer-events-auto bg-white border border-line${ring} rounded-lg shadow-lg px-3.5 py-3 flex items-start gap-2.5 max-w-sm w-max transition-all duration-200 opacity-0 translate-y-2 scale-95`;
   toast.innerHTML = `
     <span class="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center ${iconWrap}">
       <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${iconPath}</svg>
     </span>
-    <span class="toast-message text-sm font-medium text-ink leading-snug pt-px"></span>
-    <button type="button" class="toast-close flex-shrink-0 text-stone-400 hover:text-stone-600 -mr-1 -mt-0.5 p-0.5" aria-label="Dismiss">
-      <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M18 6 6 18" /><path d="m6 6 12 12" />
-      </svg>
-    </button>
+    <span class="toast-message min-w-0 flex-1 text-sm font-medium text-ink leading-snug pt-px break-words [overflow-wrap:anywhere]"></span>
+    <div class="flex items-center gap-0.5 flex-shrink-0 -mr-1 -mt-0.5">
+      <button type="button" class="toast-copy text-stone-400 hover:text-stone-600 p-0.5" aria-label="Copy message">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect width="14" height="14" x="8" y="8" rx="2" ry="2" /><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+        </svg>
+      </button>
+      <button type="button" class="toast-close text-stone-400 hover:text-stone-600 p-0.5" aria-label="Dismiss">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M18 6 6 18" /><path d="m6 6 12 12" />
+        </svg>
+      </button>
+    </div>
   `;
   toast.querySelector('.toast-message').textContent = message;
 
@@ -68,6 +79,20 @@ function showToast(message, { type = 'info', duration = 3500 } = {}) {
     toast.classList.add('opacity-0', 'scale-95');
     setTimeout(() => toast.remove(), 200);
   };
+
+  const copyBtn = toast.querySelector('.toast-copy');
+  copyBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const original = copyBtn.innerHTML;
+    try {
+      await navigator.clipboard.writeText(message);
+      copyBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg>';
+    } catch (err) {
+      // clipboard permission denied or unavailable -- nothing else to do
+    }
+    setTimeout(() => { copyBtn.innerHTML = original; }, 1200);
+  });
+
   toast.querySelector('.toast-close').addEventListener('click', (e) => {
     e.stopPropagation();
     dismiss();
